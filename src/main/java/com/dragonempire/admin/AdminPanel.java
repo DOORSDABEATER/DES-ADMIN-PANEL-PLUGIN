@@ -120,10 +120,12 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             inv.setItem(slot,item(Material.WRITABLE_BOOK,ChatColor.AQUA+c.name,"",ChatColor.GRAY+"Steps: "+c.steps.size(),ChatColor.GREEN+"Left-click: Run",ChatColor.YELLOW+"Right-click: Edit",ChatColor.RED+"Shift-right: Delete"));
         }
         inv.setItem(45,item(Material.ARROW,ChatColor.WHITE+"PREVIOUS"));
+        inv.setItem(48,item(Material.BARRIER,ChatColor.RED+"BACK"));
         inv.setItem(49,item(Material.EMERALD,ChatColor.GREEN+"CREATE CHAIN","",ChatColor.GRAY+"Start a new personal chain"));
         inv.setItem(53,item(Material.ARROW,ChatColor.WHITE+"NEXT")); fill(inv); p.openInventory(inv);
     }
     private void openEditor(Player p,String name) {
+        editingChain.put(p.getUniqueId(), name);
         Chain c=profile(p.getUniqueId()).chains.get(name); if(c==null){openChains(p,0);return;}
         Inventory inv=Bukkit.createInventory(null,54,EDITOR+" | "+name);
         for(int i=0;i<Math.min(45,c.steps.size());i++){
@@ -162,9 +164,9 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
                 pr.chains.put(n,new Chain(n));saveProfile(id);openEditor(p,n);
             } else if(action.startsWith("add:")){String n=action.substring(4);String cmd=message.replaceFirst("^/","").trim();
                 if(cmd.isEmpty()||cmd.contains("\n")){p.sendMessage(PREFIX+ChatColor.RED+"Invalid command.");return;}
-                Chain c=profile(id).chains.get(n);if(c==null)return;c.steps.add(new Step(cmd,0));saveProfile(id);openEditor(p,n);
+                Chain c=profile(id).chains.get(n);if(c==null)return;long delay=delayNext.getOrDefault(id,0L);delayNext.remove(id);c.steps.add(new Step(cmd,delay));saveProfile(id);openEditor(p,n);
             } else if(action.startsWith("delay:")){String n=action.substring(6);try{long ticks=Math.max(0,Math.min(72000,Long.parseLong(message)));p.sendMessage(PREFIX+ChatColor.GREEN+"Next step delay set to "+ticks+" ticks.");delayNext.put(id,ticks);openEditor(p,n);}catch(NumberFormatException ex){p.sendMessage(PREFIX+ChatColor.RED+"Enter a number of ticks.");}}
-            else if(action.startsWith("rename:")){String old=action.substring(7),n=clean(message);Profile pr=profile(id);Chain c=pr.chains.remove(old);if(c!=null&&!n.isEmpty()&&!pr.chains.containsKey(n)){c.name=n;pr.chains.put(n,c);saveProfile(id);openEditor(p,n);}}
+            else if(action.startsWith("rename:")){String old=action.substring(7),n=clean(message);Profile pr=profile(id);Chain c=pr.chains.get(old);if(c!=null&&!n.isEmpty()&&!pr.chains.containsKey(n)){pr.chains.remove(old);c.name=n;pr.chains.put(n,c);saveProfile(id);openEditor(p,n);}else{p.sendMessage(PREFIX+ChatColor.RED+"Invalid name or name already exists.");openEditor(p,old);}}
         });
     }
     private final Map<UUID,Long> delayNext=new HashMap<>();
@@ -178,7 +180,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         s.sendMessage(PREFIX+"Use /ap, /ap list, /ap create <name>, /ap run <name>");return true;
     }
     @EventHandler public void onClick(InventoryClickEvent e) {
-        String title=e.getView().getTitle(); if(!title.equals(MAIN)&&!title.equals(CHAINS+" "+listPages.getOrDefault(e.getWhoClicked().getUniqueId(),0)+"/"+Math.max(1,(profile(e.getWhoClicked().getUniqueId()).chains.size()+44)/45))&&!title.startsWith(CHAINS+" ")&&!title.equals(EDITOR+" | "+editingChain.get(e.getWhoClicked().getUniqueId()))&&!title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE"))return;
+        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE"); if(!known)return;
         e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||!allowed(p)||e.getCurrentItem()==null||!e.getCurrentItem().hasItemMeta())return;
         String name=ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName()); if(name==null)return;
         UUID id=p.getUniqueId();
@@ -202,7 +204,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             if(name.equals("SET NEXT DELAY")){ask(p,"delay:"+chainName,"Enter delay in ticks for the next step:");return;}
             if(name.equals("RUN CHAIN")){execute(p,c);return;}
             if(name.equals("RENAME CHAIN")){ask(p,"rename:"+chainName,"Enter the new chain name:");return;}
-            if(name.startsWith("STEP ")&&e.isRightClick()){try{int idx=Integer.parseInt(name.substring(5))-1;if(idx>=0&&idx<c.steps.size()){c.steps.remove(idx);saveProfile(id);openEditor(p,chainName);}}catch(NumberFormatException ignored){}}
+            if(name.startsWith("STEP ")){try{int idx=Integer.parseInt(name.substring(5))-1;if(idx>=0&&idx<c.steps.size()){if(e.isRightClick()){c.steps.remove(idx);}else if(e.isShiftClick()&&idx>0){Collections.swap(c.steps,idx,idx-1);}else{return;}saveProfile(id);openEditor(p,chainName);}}catch(NumberFormatException ignored){}}
         }
     }
     @Override public List<String> onTabComplete(CommandSender s,Command c,String a,String[] args){if(args.length==1)return Arrays.asList("open","list","create","run");return Collections.emptyList();}
