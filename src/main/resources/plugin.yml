@@ -1,0 +1,17 @@
+name: DragonEmpireAdminPanel
+version: '${version}'
+main: com.dragonempire.admin.AdminPanel
+api-version: '26.2'
+author: DragonEmpire
+description: Admin command-chain panel for Dragon Empire SMP
+
+commands:
+  adminpanel:
+    description: Opens the Dragon Empire admin panel
+    aliases: [ap]
+    permission: dragonempire.admin
+
+permissions:
+  dragonempire.admin:
+    description: Allows access to the admin panel
+    default: op
