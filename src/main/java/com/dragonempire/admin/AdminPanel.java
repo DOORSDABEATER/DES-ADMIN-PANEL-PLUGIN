@@ -190,7 +190,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             List<String> commands = getConfig().getStringList("chains." + name);
             player.sendMessage(ChatColor.GOLD + "Commands in " + name + ":");
             for (int i = 0; i < commands.size(); i++) {
-                player.sendMessage(ChatColor.YELLOW + (i + 1) + ". " + commands.get(i));
+                player.sendMessage(ChatColor.YELLOW.toString() + (i + 1) + ". " + commands.get(i));
             }
         }
     }
