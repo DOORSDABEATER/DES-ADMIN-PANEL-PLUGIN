@@ -35,6 +35,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private final Map<UUID, Map<Integer, UUID>> fromSlots = new HashMap<>(), toSlots = new HashMap<>();
     private final Map<UUID, Map<Integer, String>> waypointSlots = new HashMap<>();
     private final Map<UUID, Integer> waypointPages = new HashMap<>();
+    private final Map<UUID, Integer> activityLogPages = new HashMap<>();
     private final Map<UUID, Integer> fromPlayerPages = new HashMap<>(), toPlayerPages = new HashMap<>();
     private final Map<String, Waypoint> waypoints = new LinkedHashMap<>();
     private static final String PREFIX = ChatColor.DARK_PURPLE + "DES " + ChatColor.GRAY + "» ";
@@ -50,6 +51,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private static final String DAILY_TIME = ChatColor.DARK_GREEN + "✦ DAILY USE | TIME";
     private static final String DAILY_RULES = ChatColor.DARK_GREEN + "✦ IMPORTANT GAMERULES";
     private static final String WAYPOINTS = ChatColor.DARK_GREEN + "✦ SHARED WAYPOINTS";
+    private static final String ACTIVITY_LOG = ChatColor.DARK_AQUA + "✦ ADMIN ACTIVITY LOG";
 
     private static final class Step {
         String command; long delay;
@@ -199,6 +201,20 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);
     }
 
+    private File activityLogFile(){return new File(getDataFolder(),"admin-activity-log.yml");}
+    private void logActivity(Player admin,String action,String details){
+        File file=activityLogFile();YamlConfiguration y=YamlConfiguration.loadConfiguration(file);List<Map<?,?>> old=y.getMapList("entries");List<Map<String,Object>> entries=new ArrayList<>();
+        for(Map<?,?> row:old){Map<String,Object> copy=new LinkedHashMap<>();for(Map.Entry<?,?> e:row.entrySet())copy.put(String.valueOf(e.getKey()),e.getValue());entries.add(copy);}
+        Map<String,Object> entry=new LinkedHashMap<>();entry.put("time",System.currentTimeMillis());entry.put("admin",admin.getName());entry.put("uuid",admin.getUniqueId().toString());entry.put("action",action);entry.put("details",details);entries.add(entry);
+        if(entries.size()>500)entries=new ArrayList<>(entries.subList(entries.size()-500,entries.size()));y.set("entries",entries);
+        try{y.save(file);}catch(IOException ex){getLogger().severe("Could not save admin activity log: "+ex.getMessage());}
+    }
+    private void openActivityLog(Player p,int page){
+        List<Map<?,?>> entries=YamlConfiguration.loadConfiguration(activityLogFile()).getMapList("entries");int pages=Math.max(1,(entries.size()+44)/45);page=Math.max(0,Math.min(page,pages-1));activityLogPages.put(p.getUniqueId(),page);
+        Inventory inv=Bukkit.createInventory(null,54,ACTIVITY_LOG+" "+(page+1)+"/"+pages);int start=entries.size()-1-page*45,slot=0;
+        for(int i=start;i>=0&&slot<45;i--){Map<?,?> row=entries.get(i);long time=row.get("time") instanceof Number n?n.longValue():0L;String admin=String.valueOf(row.containsKey("admin")?row.get("admin"):"Unknown");String action=String.valueOf(row.containsKey("action")?row.get("action"):"Unknown");String details=String.valueOf(row.containsKey("details")?row.get("details"):"");String stamp=new java.text.SimpleDateFormat("dd MMM yyyy HH:mm:ss").format(new java.util.Date(time));inv.setItem(slot++,item(Material.PAPER,ChatColor.AQUA+action,"",ChatColor.GRAY+"Admin: "+ChatColor.WHITE+admin,ChatColor.GRAY+"When: "+ChatColor.WHITE+stamp,ChatColor.GRAY+"Details: "+ChatColor.WHITE+details));}
+        if(entries.isEmpty())inv.setItem(22,item(Material.BOOK,ChatColor.GRAY+"NO ACTIVITY YET","","Admin actions will appear here."));inv.setItem(45,item(Material.ARROW,ChatColor.WHITE+"BACK"));inv.setItem(48,item(Material.ARROW,ChatColor.YELLOW+"PREVIOUS"));inv.setItem(53,item(Material.ARROW,ChatColor.YELLOW+"NEXT"));fill(inv);p.openInventory(inv);
+    }
     private File waypointsFile(){return new File(getDataFolder(),"shared-waypoints.yml");}
     private void loadWaypoints(){
         waypoints.clear();File f=waypointsFile();if(!f.exists())return;YamlConfiguration y=YamlConfiguration.loadConfiguration(f);
@@ -215,7 +231,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     }
     private int[] fromHeadSlots(){return new int[]{0,1,2,3,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21};}
     private int[] toHeadSlots(){return new int[]{22,23,24,25,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44};}
-    private void openDailyUse(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_USE);inv.setItem(21,item(Material.ENDER_PEARL,ChatColor.GREEN+"TP","","Teleport players to players or coordinates",ChatColor.YELLOW+"Click to open"));inv.setItem(23,item(Material.WEATHERED_COPPER,ChatColor.AQUA+"WEATHER","","Change weather across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(25,item(Material.CLOCK,ChatColor.GOLD+"TIME","","Change time across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(31,item(Material.COMMAND_BLOCK,ChatColor.GOLD+"IMPORTANT GAMERULES","","View and toggle important gamerules across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
+    private void openDailyUse(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_USE);inv.setItem(21,item(Material.ENDER_PEARL,ChatColor.GREEN+"TP","","Teleport players to players or coordinates",ChatColor.YELLOW+"Click to open"));inv.setItem(23,item(Material.WEATHERED_COPPER,ChatColor.AQUA+"WEATHER","","Change weather across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(25,item(Material.CLOCK,ChatColor.GOLD+"TIME","","Change time across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(31,item(Material.COMMAND_BLOCK,ChatColor.GOLD+"IMPORTANT GAMERULES","","View and toggle important gamerules across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(33,item(Material.BOOK,ChatColor.AQUA+"ACTIVITY LOG","","View recent admin actions",ChatColor.YELLOW+"Click to open"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
     private void openDailyWeather(Player p){Inventory inv=Bukkit.createInventory(null,27,DAILY_WEATHER);inv.setItem(11,item(Material.WATER_BUCKET,ChatColor.AQUA+"RAIN","","Enable rain in every server world"));inv.setItem(13,item(Material.LIGHTNING_ROD,ChatColor.YELLOW+"THUNDER","","Enable thunderstorms in every server world"));inv.setItem(15,item(Material.SUNFLOWER,ChatColor.GOLD+"CLEAR","","Clear rain and thunder in every server world"));inv.setItem(22,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
     private void setServerWeather(String weather){for(World world:Bukkit.getWorlds()){if(weather.equals("RAIN")){world.setStorm(true);world.setThundering(false);world.setWeatherDuration(20*60*10);world.setThunderDuration(0);}else if(weather.equals("THUNDER")){world.setStorm(true);world.setThundering(true);world.setWeatherDuration(20*60*10);world.setThunderDuration(20*60*10);}else{world.setStorm(false);world.setThundering(false);world.setWeatherDuration(20*60*10);world.setThunderDuration(20*60*10);}}}
     private void openDailyTime(Player p){Inventory inv=Bukkit.createInventory(null,27,DAILY_TIME);inv.setItem(10,item(Material.SUNRISE,ChatColor.YELLOW+"DAWN","","Set every server world to dawn"));inv.setItem(11,item(Material.SUNFLOWER,ChatColor.GOLD+"DAY","","Set every server world to daytime"));inv.setItem(12,item(Material.CLOCK,ChatColor.YELLOW+"NOON","","Set every server world to noon"));inv.setItem(13,item(Material.COMPASS,ChatColor.GOLD+"AFTERNOON","","Set every server world to afternoon"));inv.setItem(14,item(Material.CLOCK,ChatColor.YELLOW+"EVENING","","Set every server world to evening"));inv.setItem(15,item(Material.REDSTONE_TORCH,ChatColor.BLUE+"NIGHT","","Set every server world to night"));inv.setItem(16,item(Material.BLUE_ICE,ChatColor.DARK_PURPLE+"MIDNIGHT","","Set every server world to midnight"));inv.setItem(22,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
@@ -223,7 +239,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private boolean isRuleEnabledInAllWorlds(GameRule<Boolean> rule){List<World> worlds=Bukkit.getWorlds();if(worlds.isEmpty())return false;for(World world:worlds)if(!Boolean.TRUE.equals(world.getGameRuleValue(rule)))return false;return true;}
     private String ruleStatus(GameRule<Boolean> rule){List<World> worlds=Bukkit.getWorlds();if(worlds.isEmpty())return "UNKNOWN";boolean on=false,off=false;for(World world:worlds){if(Boolean.TRUE.equals(world.getGameRuleValue(rule)))on=true;else off=true;}return on&&off?"MIXED":on?"ON":"OFF";}
     private void openDailyRules(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_RULES);for(int i=0;i<IMPORTANT_RULES.length;i++){RuleEntry entry=IMPORTANT_RULES[i];String status=ruleStatus(entry.rule);boolean enabled=status.equals("ON");Material icon=status.equals("MIXED")?Material.YELLOW_DYE:enabled?Material.LIME_DYE:Material.GRAY_DYE;ChatColor color=status.equals("MIXED")?ChatColor.YELLOW:enabled?ChatColor.GREEN:ChatColor.RED;inv.setItem(10+i,item(icon,color+entry.name,"",ChatColor.GRAY+entry.description,ChatColor.GRAY+"All worlds: "+color+status,ChatColor.YELLOW+"Click to toggle in every world"));}inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
-    private void toggleRule(Player p,RuleEntry entry){boolean turnOn=!isRuleEnabledInAllWorlds(entry.rule);for(World world:Bukkit.getWorlds())world.setGameRule(entry.rule,turnOn);p.sendMessage(PREFIX+ChatColor.GREEN+entry.name+" set to "+(turnOn?"ON":"OFF")+" in all server worlds.");openDailyRules(p);}
+    private void toggleRule(Player p,RuleEntry entry){boolean turnOn=!isRuleEnabledInAllWorlds(entry.rule);for(World world:Bukkit.getWorlds())world.setGameRule(entry.rule,turnOn);logActivity(p,"GAMERULE",entry.name+" set to "+(turnOn?"ON":"OFF")+" in all worlds");p.sendMessage(PREFIX+ChatColor.GREEN+entry.name+" set to "+(turnOn?"ON":"OFF")+" in all server worlds.");openDailyRules(p);}
     private void openDailyTp(Player p){
         UUID id=p.getUniqueId();Inventory inv=Bukkit.createInventory(null,54,DAILY_TP);Set<UUID> selected=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());
         List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int fp=Math.max(0,Math.min(fromPlayerPages.getOrDefault(id,0),Math.max(0,(online.size()-1)/fromHeadSlots().length)));int tp=Math.max(0,Math.min(toPlayerPages.getOrDefault(id,0),Math.max(0,(online.size()-1)/toHeadSlots().length)));fromPlayerPages.put(id,fp);toPlayerPages.put(id,tp);
@@ -270,7 +286,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private void saveWaypoint(Player p,String name,Location loc){
         String n=name.trim().replaceAll("[^A-Za-z0-9 _-]","");if(n.isEmpty()||n.length()>32){p.sendMessage(PREFIX+ChatColor.RED+"Waypoint name must be 1–32 characters.");return;}
         for(Waypoint w:waypoints.values())if(w.name.equalsIgnoreCase(n)){p.sendMessage(PREFIX+ChatColor.RED+"That waypoint name already exists.");return;}
-        String id=UUID.randomUUID().toString();waypoints.put(id,new Waypoint(id,n,loc.getWorld().getName(),loc.getX(),loc.getY(),loc.getZ()));saveWaypoints();p.sendMessage(PREFIX+ChatColor.GREEN+"Saved shared waypoint: "+n);openWaypoints(p,0);
+        String id=UUID.randomUUID().toString();waypoints.put(id,new Waypoint(id,n,loc.getWorld().getName(),loc.getX(),loc.getY(),loc.getZ()));saveWaypoints();logActivity(p,"WAYPOINT","Saved shared waypoint "+n+" at "+loc.getWorld().getName()+" "+loc.getBlockX()+" "+loc.getBlockY()+" "+loc.getBlockZ());p.sendMessage(PREFIX+ChatColor.GREEN+"Saved shared waypoint: "+n);openWaypoints(p,0);
     }
 
     private void openChains(Player p,int page) {
@@ -323,8 +339,8 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             Player p=Bukkit.getPlayer(id); if(p==null)return;
             if(message.equalsIgnoreCase("cancel")){p.sendMessage(PREFIX+ChatColor.RED+"Cancelled.");return;}
             if(action.equals("newabuse-name")){String n=message.trim().replaceAll("[^A-Za-z0-9 _-]","");if(n.isEmpty()||n.length()>32){p.sendMessage(PREFIX+ChatColor.RED+"Use a name between 1 and 32 characters.");openAbuseList(p,false);return;}pendingAbuseNames.put(id,n);ask(p,"newabuse-command","Enter the command to run (without the leading slash):");}
-            else if(action.equals("newabuse-command")){String n=pendingAbuseNames.remove(id),command=message.replaceFirst("^/","").trim();if(n==null||command.isEmpty()||command.contains("\n")){p.sendMessage(PREFIX+ChatColor.RED+"Invalid command.");openAbuseList(p,false);return;}String key=UUID.randomUUID().toString();abuseCommands.put(key,new AbuseCommand(key,n,command,id,true));saveAbuseCommands();p.sendMessage(PREFIX+ChatColor.GREEN+"Created and shared command: "+n);openAbuseList(p,false);}
-            else if(action.startsWith("editabuse:")){String key=action.substring(9),command=message.replaceFirst("^/","").trim();AbuseCommand c=abuseCommands.get(key);if(c!=null&&canManageAbuse(p,c)&&!command.isEmpty()&&!command.contains("\n")){c.command=command;saveAbuseCommands();openAbuseCommand(p,key);}else{p.sendMessage(PREFIX+ChatColor.RED+"Could not update that command.");openAbuseList(p,false);}}
+            else if(action.equals("newabuse-command")){String n=pendingAbuseNames.remove(id),command=message.replaceFirst("^/","").trim();if(n==null||command.isEmpty()||command.contains("\n")){p.sendMessage(PREFIX+ChatColor.RED+"Invalid command.");openAbuseList(p,false);return;}String key=UUID.randomUUID().toString();abuseCommands.put(key,new AbuseCommand(key,n,command,id,true));saveAbuseCommands();logActivity(p,"CUSTOM COMMAND","Created and shared "+n+" (/"+command+")");p.sendMessage(PREFIX+ChatColor.GREEN+"Created and shared command: "+n);openAbuseList(p,false);}
+            else if(action.startsWith("editabuse:")){String key=action.substring(9),command=message.replaceFirst("^/","").trim();AbuseCommand c=abuseCommands.get(key);if(c!=null&&canManageAbuse(p,c)&&!command.isEmpty()&&!command.contains("\n")){c.command=command;saveAbuseCommands();logActivity(p,"CUSTOM COMMAND","Edited "+c.name+" to /"+command);openAbuseCommand(p,key);}else{p.sendMessage(PREFIX+ChatColor.RED+"Could not update that command.");openAbuseList(p,false);}}
             else if(action.equals("tpcoords")){
                 String[] a=message.trim().split("\\s+");try{if(a.length!=4)throw new IllegalArgumentException();World w=Bukkit.getWorld(a[0]);if(w==null)throw new IllegalArgumentException();tpCoords.put(id,new Location(w,Double.parseDouble(a[1]),Double.parseDouble(a[2]),Double.parseDouble(a[3])));tpWaypoint.remove(id);tpTo.remove(id);p.sendMessage(PREFIX+ChatColor.GREEN+"Coordinate destination selected.");openDailyTp(p);}catch(IllegalArgumentException ex){p.sendMessage(PREFIX+ChatColor.RED+"Use: world x y z (with a loaded world name).");openDailyTp(p);}
             }
@@ -352,16 +368,19 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         s.sendMessage(PREFIX+"Use /ap, /ap list, /ap create <name>, /ap run <name>");return true;
     }
     @EventHandler public void onClick(InventoryClickEvent e) {
-        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL)||title.equals(DAILY_USE)||title.equals(DAILY_TP)||title.equals(DAILY_WEATHER)||title.equals(DAILY_TIME)||title.equals(DAILY_RULES)||title.equals(WAYPOINTS); if(!known)return;
+        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL)||title.equals(DAILY_USE)||title.equals(DAILY_TP)||title.equals(DAILY_WEATHER)||title.equals(DAILY_TIME)||title.equals(DAILY_RULES)||title.equals(WAYPOINTS)||title.startsWith(ACTIVITY_LOG+" "); if(!known)return;
         e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||!allowed(p)||e.getCurrentItem()==null||!e.getCurrentItem().hasItemMeta())return;
         String name=ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName()); if(name==null)return;
         UUID id=p.getUniqueId();
         if(title.equals(MAIN)){
             switch(name){case "ADMIN ABUSE":openAbuse(p);break;case "COMMAND CHAINS":openChains(p,0);break;case "DAILY USE":openDailyUse(p);break;case "MY PROFILE":p.sendMessage(PREFIX+"Your profile is stored separately from other admins.");break;case "CLOSE":p.closeInventory();break;}return;
         }
-        if(title.equals(DAILY_USE)){if(name.equals("BACK")){openMain(p);return;}if(name.equals("TP")){openDailyTp(p);return;}if(name.equals("WEATHER")){openDailyWeather(p);return;}if(name.equals("TIME")){openDailyTime(p);return;}if(name.equals("IMPORTANT GAMERULES")){openDailyRules(p);return;}return;}
-        if(title.equals(DAILY_WEATHER)){if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("RAIN")||name.equals("THUNDER")||name.equals("CLEAR")){setServerWeather(name);p.sendMessage(PREFIX+ChatColor.GREEN+"Weather set to "+name.toLowerCase(Locale.ROOT)+" in all server worlds.");openDailyWeather(p);return;}return;}
-        if(title.equals(DAILY_TIME)){if(name.equals("BACK")){openDailyUse(p);return;}long time=switch(name){case "DAWN"->0L;case "DAY"->1000L;case "NOON"->6000L;case "AFTERNOON"->9000L;case "EVENING"->12000L;case "NIGHT"->13000L;case "MIDNIGHT"->18000L;default->-1L;};if(time>=0){setServerTime(time);p.sendMessage(PREFIX+ChatColor.GREEN+"Time set to "+name.toLowerCase(Locale.ROOT)+" in all server worlds.");openDailyTime(p);}return;}
+        if(title.equals(DAILY_USE)){if(name.equals("BACK")){openMain(p);return;}if(name.equals("TP")){openDailyTp(p);return;}if(name.equals("WEATHER")){openDailyWeather(p);return;}if(name.equals("TIME")){openDailyTime(p);return;}if(name.equals("IMPORTANT GAMERULES")){openDailyRules(p);return;}if(name.equals("ACTIVITY LOG")){openActivityLog(p,0);return;}return;}
+        if(title.startsWith(ACTIVITY_LOG+" ")){
+            int page=activityLogPages.getOrDefault(id,0);if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("PREVIOUS")){openActivityLog(p,page-1);return;}if(name.equals("NEXT")){openActivityLog(p,page+1);return;}return;
+        }
+        if(title.equals(DAILY_WEATHER)){if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("RAIN")||name.equals("THUNDER")||name.equals("CLEAR")){setServerWeather(name);logActivity(p,"WEATHER",name+" in all server worlds");p.sendMessage(PREFIX+ChatColor.GREEN+"Weather set to "+name.toLowerCase(Locale.ROOT)+" in all server worlds.");openDailyWeather(p);return;}return;}
+        if(title.equals(DAILY_TIME)){if(name.equals("BACK")){openDailyUse(p);return;}long time=switch(name){case "DAWN"->0L;case "DAY"->1000L;case "NOON"->6000L;case "AFTERNOON"->9000L;case "EVENING"->12000L;case "NIGHT"->13000L;case "MIDNIGHT"->18000L;default->-1L;};if(time>=0){setServerTime(time);logActivity(p,"TIME",name+" in all server worlds");p.sendMessage(PREFIX+ChatColor.GREEN+"Time set to "+name.toLowerCase(Locale.ROOT)+" in all server worlds.");openDailyTime(p);}return;}
         if(title.equals(DAILY_RULES)){if(name.equals("BACK")){openDailyUse(p);return;}for(RuleEntry entry:IMPORTANT_RULES)if(name.equals(entry.name)){toggleRule(p,entry);return;}return;}
         if(title.equals(DAILY_TP)){
             if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("RUN TP")){runDailyTp(p);return;}
@@ -384,6 +403,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             String wid=waypointSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());if(wid!=null&&e.isLeftClick()){tpWaypoint.put(id,wid);tpCoords.remove(id);tpTo.remove(id);openWaypoints(p,waypointPages.getOrDefault(id,0));return;}return;
         }
         if(title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")){
+            if(Arrays.asList("THUNDER CALL","LAUNCH","INFERNO","RANDOM TP").contains(name))logActivity(p,"ADMIN ABUSE",name);
             switch(name){case "BACK":openMain(p);break;case "YOUR COMMANDS":openAbuseList(p,false);break;case "SHARED COMMANDS":openAbuseList(p,true);break;case "THUNDER CALL":p.getWorld().strikeLightningEffect(p.getTargetBlockExact(64)==null?p.getLocation():p.getTargetBlockExact(64).getLocation());break;case "LAUNCH":p.setVelocity(p.getVelocity().setY(2.2));break;case "INFERNO":p.getWorld().spawnParticle(org.bukkit.Particle.FLAME,p.getLocation(),100,2,1,2,0.04);p.getWorld().playSound(p.getLocation(),org.bukkit.Sound.ENTITY_BLAZE_SHOOT,1,0.7f);break;case "RANDOM TP":{var l=p.getLocation();var r=l.clone().add((Math.random()-.5)*24,0,(Math.random()-.5)*24);r.setY(p.getWorld().getHighestBlockYAt(r)+1);if(p.getWorld().getBlockAt(r).isPassable())p.teleport(r);break;}}return;
         }
         if(title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)){
@@ -395,12 +415,12 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         if(title.equals(ABUSE_DETAIL)){
             String key=selectedAbuseCommands.get(id);AbuseCommand c=key==null?null:abuseCommands.get(key);if(c==null){openAbuseList(p,false);return;}
             if(name.equals("BACK")){openAbuseList(p,c.shared);return;}
-            if(name.equals("RUN COMMAND")){Bukkit.dispatchCommand(Bukkit.getConsoleSender(),c.command);p.sendMessage(PREFIX+ChatColor.GREEN+"Executed "+c.name+".");return;}
+            if(name.equals("RUN COMMAND")){Bukkit.dispatchCommand(Bukkit.getConsoleSender(),c.command);logActivity(p,"CUSTOM COMMAND","Ran "+c.name+" (/"+c.command+")");p.sendMessage(PREFIX+ChatColor.GREEN+"Executed "+c.name+".");return;}
             if(!canManageAbuse(p,c))return;
-            if(name.equals("MAKE PRIVATE")){c.shared=false;saveAbuseCommands();openAbuseCommand(p,key);return;}
-            if(name.equals("MAKE SHARED")){c.shared=true;saveAbuseCommands();openAbuseCommand(p,key);return;}
+            if(name.equals("MAKE PRIVATE")){c.shared=false;saveAbuseCommands();logActivity(p,"CUSTOM COMMAND","Made "+c.name+" private");openAbuseCommand(p,key);return;}
+            if(name.equals("MAKE SHARED")){c.shared=true;saveAbuseCommands();logActivity(p,"CUSTOM COMMAND","Made "+c.name+" shared");openAbuseCommand(p,key);return;}
             if(name.equals("EDIT COMMAND")){ask(p,"editabuse:"+key,"Enter the updated command (without the leading slash):");return;}
-            if(name.equals("DELETE COMMAND")){abuseCommands.remove(key);saveAbuseCommands();p.sendMessage(PREFIX+ChatColor.RED+"Command deleted.");openAbuseList(p,false);return;}return;
+            if(name.equals("DELETE COMMAND")){abuseCommands.remove(key);saveAbuseCommands();logActivity(p,"CUSTOM COMMAND","Deleted "+c.name);p.sendMessage(PREFIX+ChatColor.RED+"Command deleted.");openAbuseList(p,false);return;}return;
         }
         if(title.startsWith(CHAINS)){
             int page=listPages.getOrDefault(id,0);if(name.equals("BACK")){openMain(p);return;}if(name.equals("CHAIN BUILDER")){ask(p,"newchain","Enter a name for your new chain:");return;}
@@ -414,7 +434,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             if(name.equals("BACK")){openChains(p,0);return;}
             if(name.equals("ADD COMMAND")){ask(p,"add:"+chainName,"Enter the command to append (without needing a slash):");return;}
             if(name.equals("SET NEXT DELAY")){ask(p,"delay:"+chainName,"Enter delay in ticks for the next step:");return;}
-            if(name.equals("RUN CHAIN")){execute(p,c);return;}
+            if(name.equals("RUN CHAIN")){logActivity(p,"COMMAND CHAIN","Ran "+c.name);execute(p,c);return;}
             if(name.equals("RENAME CHAIN")){ask(p,"rename:"+chainName,"Enter the new chain name:");return;}
             if(name.startsWith("STEP ")){try{int idx=Integer.parseInt(name.substring(5))-1;if(idx>=0&&idx<c.steps.size()){if(e.isRightClick()){c.steps.remove(idx);}else if(e.isShiftClick()&&idx>0){Collections.swap(c.steps,idx,idx-1);}else{return;}saveProfile(id);openEditor(p,chainName);}}catch(NumberFormatException ignored){}}
         }
