@@ -15,3 +15,6 @@ permissions:
   dragonempire.admin:
     description: Allows access to the admin panel
     default: op
+  dragonempire.admin.owner:
+    description: Allows the server owner to manage any Admin Abuse command
+    default: false
