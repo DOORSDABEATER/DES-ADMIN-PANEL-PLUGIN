@@ -108,7 +108,6 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         Inventory inv = Bukkit.createInventory(null,54,MAIN);
         inv.setItem(10,item(Material.NETHER_STAR,ChatColor.LIGHT_PURPLE+"ADMIN ABUSE","",ChatColor.GRAY+"Abilities, chaos and server-wide fun",ChatColor.YELLOW+"Click to open"));
         inv.setItem(12,item(Material.WRITABLE_BOOK,ChatColor.AQUA+"COMMAND CHAINS","",ChatColor.GRAY+"Your personal saved sequences",ChatColor.YELLOW+"Click to open"));
-        inv.setItem(14,item(Material.COMPARATOR,ChatColor.GOLD+"CHAIN BUILDER","",ChatColor.GRAY+"Create and edit multi-step sequences"));
         inv.setItem(16,item(Material.PLAYER_HEAD,ChatColor.GREEN+"PLAYER TOOLS","",ChatColor.GRAY+"Teleport and inspect players"));
         inv.setItem(31,item(Material.CHEST,ChatColor.WHITE+"MY PROFILE","",ChatColor.GRAY+"Your personal panel data is saved by UUID"));
         inv.setItem(49,item(Material.BARRIER,ChatColor.RED+"CLOSE")); fill(inv); p.openInventory(inv);
@@ -170,7 +169,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         }
         inv.setItem(45,item(Material.ARROW,ChatColor.WHITE+"PREVIOUS"));
         inv.setItem(48,item(Material.BARRIER,ChatColor.RED+"BACK"));
-        inv.setItem(49,item(Material.EMERALD,ChatColor.GREEN+"CREATE CHAIN","",ChatColor.GRAY+"Start a new personal chain"));
+        inv.setItem(49,item(Material.COMPARATOR,ChatColor.GOLD+"CHAIN BUILDER","",ChatColor.GRAY+"Create a new saved command chain"));
         inv.setItem(53,item(Material.ARROW,ChatColor.WHITE+"NEXT")); fill(inv); p.openInventory(inv);
     }
     private void openEditor(Player p,String name) {
@@ -237,7 +236,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         String name=ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName()); if(name==null)return;
         UUID id=p.getUniqueId();
         if(title.equals(MAIN)){
-            switch(name){case "ADMIN ABUSE":openAbuse(p);break;case "COMMAND CHAINS":openChains(p,0);break;case "CHAIN BUILDER":ask(p,"newchain","Enter a name for your new chain:");break;case "PLAYER TOOLS":p.sendMessage(PREFIX+"Use /tp, /effect and other server commands in your chains.");break;case "MY PROFILE":p.sendMessage(PREFIX+"Your profile is stored separately from other admins.");break;case "CLOSE":p.closeInventory();break;}return;
+            switch(name){case "ADMIN ABUSE":openAbuse(p);break;case "COMMAND CHAINS":openChains(p,0);break;case "PLAYER TOOLS":p.sendMessage(PREFIX+"Use /tp, /effect and other server commands in your chains.");break;case "MY PROFILE":p.sendMessage(PREFIX+"Your profile is stored separately from other admins.");break;case "CLOSE":p.closeInventory();break;}return;
         }
         if(title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")){
             switch(name){case "BACK":openMain(p);break;case "YOUR COMMANDS":openAbuseList(p,false);break;case "SHARED COMMANDS":openAbuseList(p,true);break;case "THUNDER CALL":p.getWorld().strikeLightningEffect(p.getTargetBlockExact(64)==null?p.getLocation():p.getTargetBlockExact(64).getLocation());break;case "LAUNCH":p.setVelocity(p.getVelocity().setY(2.2));break;case "INFERNO":p.getWorld().spawnParticle(org.bukkit.Particle.FLAME,p.getLocation(),100,2,1,2,0.04);p.getWorld().playSound(p.getLocation(),org.bukkit.Sound.ENTITY_BLAZE_SHOOT,1,0.7f);break;case "RANDOM TP":{var l=p.getLocation();var r=l.clone().add((Math.random()-.5)*24,0,(Math.random()-.5)*24);r.setY(p.getWorld().getHighestBlockYAt(r)+1);if(p.getWorld().getBlockAt(r).isPassable())p.teleport(r);break;}}return;
@@ -259,7 +258,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             if(name.equals("DELETE COMMAND")){abuseCommands.remove(key);saveAbuseCommands();p.sendMessage(PREFIX+ChatColor.RED+"Command deleted.");openAbuseList(p,false);return;}return;
         }
         if(title.startsWith(CHAINS)){
-            int page=listPages.getOrDefault(id,0);if(name.equals("BACK")){openMain(p);return;}if(name.equals("CREATE CHAIN")){ask(p,"newchain","Enter a name for your new chain:");return;}
+            int page=listPages.getOrDefault(id,0);if(name.equals("BACK")){openMain(p);return;}if(name.equals("CHAIN BUILDER")){ask(p,"newchain","Enter a name for your new chain:");return;}
             if(name.equals("PREVIOUS")){openChains(p,page-1);return;}if(name.equals("NEXT")){openChains(p,page+1);return;}
             Profile pr=profile(id);String chainName=name;
             if(pr.chains.containsKey(chainName)){if(e.isShiftClick()&&e.isRightClick()){pr.chains.remove(chainName);saveProfile(id);openChains(p,page);}else if(e.isRightClick()){editingChain.put(id,chainName);openEditor(p,chainName);}else execute(p,pr.chains.get(chainName));}
