@@ -1,6 +1,6 @@
 package com.dragonempire.admin;
 
-import org.bukkit.Bukkit;
+import org.bukkit.*;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.attribute.Attribute;
@@ -12,6 +12,7 @@ import org.bukkit.event.inventory.*;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -27,6 +28,14 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private final Map<String, AbuseCommand> abuseCommands = new LinkedHashMap<>();
     private final Map<UUID, String> pendingAbuseNames = new HashMap<>();
     private final Map<UUID, String> selectedAbuseCommands = new HashMap<>();
+    private final Map<UUID, LinkedHashSet<UUID>> tpFrom = new HashMap<>();
+    private final Map<UUID, UUID> tpTo = new HashMap<>();
+    private final Map<UUID, Location> tpCoords = new HashMap<>();
+    private final Map<UUID, String> tpWaypoint = new HashMap<>();
+    private final Map<UUID, Map<Integer, UUID>> fromSlots = new HashMap<>(), toSlots = new HashMap<>();
+    private final Map<UUID, Map<Integer, String>> waypointSlots = new HashMap<>();
+    private final Map<UUID, Integer> waypointPages = new HashMap<>();
+    private final Map<String, Waypoint> waypoints = new LinkedHashMap<>();
     private static final String PREFIX = ChatColor.DARK_PURPLE + "DES " + ChatColor.GRAY + "» ";
     private static final String MAIN = ChatColor.DARK_GRAY + "✦ DRAGON EMPIRE | CONTROL";
     private static final String CHAINS = ChatColor.DARK_GRAY + "✦ PERSONAL CHAINS";
@@ -34,6 +43,9 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private static final String ABUSE_YOURS = ChatColor.DARK_PURPLE + "✦ YOUR ABUSE COMMANDS";
     private static final String ABUSE_SHARED = ChatColor.DARK_PURPLE + "✦ SHARED COMMANDS";
     private static final String ABUSE_DETAIL = ChatColor.DARK_PURPLE + "✦ COMMAND SETTINGS";
+    private static final String DAILY_USE = ChatColor.DARK_GREEN + "✦ DAILY USE";
+    private static final String DAILY_TP = ChatColor.DARK_GREEN + "✦ DAILY USE | TP";
+    private static final String WAYPOINTS = ChatColor.DARK_GREEN + "✦ SHARED WAYPOINTS";
 
     private static final class Step {
         String command; long delay;
@@ -51,10 +63,16 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         String id, name, command; UUID owner; boolean shared;
         AbuseCommand(String id,String name,String command,UUID owner,boolean shared){this.id=id;this.name=name;this.command=command;this.owner=owner;this.shared=shared;}
     }
+    private static final class Waypoint {
+        String id,name,world; double x,y,z;
+        Waypoint(String id,String name,String world,double x,double y,double z){this.id=id;this.name=name;this.world=world;this.x=x;this.y=y;this.z=z;}
+        Location location(){World w=Bukkit.getWorld(world);return w==null?null:new Location(w,x,y,z);}
+    }
 
     @Override public void onEnable() {
         getDataFolder().mkdirs();
         loadAbuseCommands();
+        loadWaypoints();
         getServer().getPluginManager().registerEvents(this, this);
         Objects.requireNonNull(getCommand("adminpanel")).setExecutor(this);
         Objects.requireNonNull(getCommand("adminpanel")).setTabCompleter(this);
@@ -158,6 +176,69 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         if(canManageAbuse(p,c)){inv.setItem(31,item(c.shared?Material.ENDER_EYE:Material.PLAYER_HEAD,ChatColor.YELLOW+(c.shared?"MAKE PRIVATE":"MAKE SHARED"),"",ChatColor.GRAY+"Change who can see this command"));inv.setItem(33,item(Material.NAME_TAG,ChatColor.AQUA+"EDIT COMMAND"));inv.setItem(40,item(Material.BARRIER,ChatColor.RED+"DELETE COMMAND"));}
         inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);
     }
+
+    private File waypointsFile(){return new File(getDataFolder(),"shared-waypoints.yml");}
+    private void loadWaypoints(){
+        waypoints.clear();File f=waypointsFile();if(!f.exists())return;YamlConfiguration y=YamlConfiguration.loadConfiguration(f);
+        if(y.getConfigurationSection("waypoints")==null)return;
+        for(String id:y.getConfigurationSection("waypoints").getKeys(false)){String n=y.getString("waypoints."+id+".name"),w=y.getString("waypoints."+id+".world");if(n!=null&&w!=null)waypoints.put(id,new Waypoint(id,n,w,y.getDouble("waypoints."+id+".x"),y.getDouble("waypoints."+id+".y"),y.getDouble("waypoints."+id+".z")));}
+    }
+    private void saveWaypoints(){
+        YamlConfiguration y=new YamlConfiguration();for(Waypoint w:waypoints.values()){String q="waypoints."+w.id;y.set(q+".name",w.name);y.set(q+".world",w.world);y.set(q+".x",w.x);y.set(q+".y",w.y);y.set(q+".z",w.z);}
+        try{y.save(waypointsFile());}catch(IOException ex){getLogger().severe("Could not save shared waypoints: "+ex.getMessage());}
+    }
+    private ItemStack playerHead(Player target,boolean selected,String section){
+        ItemStack head=new ItemStack(Material.PLAYER_HEAD);SkullMeta m=(SkullMeta)head.getItemMeta();m.setOwningPlayer(target);
+        m.setDisplayName((selected?ChatColor.GREEN+"✓ ":"")+ChatColor.YELLOW+target.getName());m.setLore(Arrays.asList(ChatColor.GRAY+section,selected?ChatColor.GREEN+"Selected":ChatColor.DARK_GRAY+"Left-click to select"));head.setItemMeta(m);return head;
+    }
+    private int[] fromHeadSlots(){return new int[]{0,1,2,3,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21};}
+    private int[] toHeadSlots(){return new int[]{22,23,24,25,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44};}
+    private void openDailyUse(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_USE);inv.setItem(22,item(Material.ENDER_PEARL,ChatColor.GREEN+"TP","","Teleport players to players or coordinates",ChatColor.YELLOW+"Click to open"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
+    private void openDailyTp(Player p){
+        UUID id=p.getUniqueId();Inventory inv=Bukkit.createInventory(null,54,DAILY_TP);Set<UUID> selected=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());
+        inv.setItem(4,item(Material.NAME_TAG,ChatColor.GREEN+"FROM","","Players to teleport","Shift + left-click selects multiple"));
+        inv.setItem(26,item(Material.COMPASS,ChatColor.AQUA+"TO","","Destination player"));
+        Map<Integer,UUID> fm=new HashMap<>(),tm=new HashMap<>();List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int i=0;
+        for(Player target:online){if(i>=fromHeadSlots().length)break;int slot=fromHeadSlots()[i++];fm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,selected.contains(target.getUniqueId()),"FROM: teleport these players"));}
+        i=0;for(Player target:online){if(i>=toHeadSlots().length)break;int slot=toHeadSlots()[i++];tm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,target.getUniqueId().equals(tpTo.get(id)),"TO: destination player"));}
+        fromSlots.put(id,fm);toSlots.put(id,tm);
+        inv.setItem(45,item(Material.LIME_DYE,ChatColor.GREEN+"RUN TP"));
+        inv.setItem(47,item(Material.COMPASS,ChatColor.AQUA+"SET COORDINATES","","Enter world x y z in chat"));
+        inv.setItem(49,item(Material.MAP,ChatColor.GOLD+"WAYPOINTS","","Open globally shared coordinates"));
+        inv.setItem(51,item(Material.LODESTONE,ChatColor.YELLOW+"SAVE CURRENT LOCATION","","Save your position as a shared waypoint"));
+        inv.setItem(53,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);
+    }
+    private void openWaypoints(Player p,int page){
+        UUID id=p.getUniqueId();Inventory inv=Bukkit.createInventory(null,54,WAYPOINTS);Set<UUID> selected=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());
+        inv.setItem(4,item(Material.NAME_TAG,ChatColor.GREEN+"FROM","","Players to teleport","Shift + left-click selects multiple"));
+        Map<Integer,UUID> fm=new HashMap<>();List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int i=0;
+        for(Player target:online){if(i>=fromHeadSlots().length)break;int slot=fromHeadSlots()[i++];fm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,selected.contains(target.getUniqueId()),"FROM: teleport these players"));}fromSlots.put(id,fm);
+        List<Waypoint> all=new ArrayList<>(waypoints.values());int pages=Math.max(1,(all.size()+22)/23);page=Math.max(0,Math.min(page,pages-1));waypointPages.put(id,page);
+        Map<Integer,String> wm=new HashMap<>();int start=page*23;
+        for(i=start;i<Math.min(start+23,all.size());i++){Waypoint w=all.get(i);int slot=22+i-start;wm.put(slot,w.id);boolean chosen=w.id.equals(tpWaypoint.get(id));inv.setItem(slot,item(Material.LODESTONE,(chosen?ChatColor.GREEN:ChatColor.GOLD)+w.name,"",ChatColor.GRAY+w.world+" "+w.x+" "+w.y+" "+w.z,chosen?ChatColor.GREEN+"Selected":ChatColor.YELLOW+"Click to select"));}
+        waypointSlots.put(id,wm);if(all.isEmpty())inv.setItem(32,item(Material.PAPER,ChatColor.GRAY+"NO WAYPOINTS","","Save your current location from the TP menu."));
+        inv.setItem(45,item(Material.ARROW,ChatColor.WHITE+"PREVIOUS"));inv.setItem(48,item(Material.ARROW,ChatColor.WHITE+"BACK TO TP"));inv.setItem(50,item(Material.LIME_DYE,ChatColor.GREEN+"RUN TP"));inv.setItem(53,item(Material.ARROW,ChatColor.WHITE+"NEXT"));fill(inv);p.openInventory(inv);
+    }
+    private void runDailyTp(Player p){
+        UUID id=p.getUniqueId();Location dest=null;String wp=tpWaypoint.get(id);UUID to=tpTo.get(id);
+        if(wp!=null&&waypoints.containsKey(wp))dest=waypoints.get(wp).location();
+        if(dest==null)dest=tpCoords.get(id);
+        if(dest==null&&to!=null){Player t=Bukkit.getPlayer(to);if(t!=null)dest=t.getLocation();}
+        if(dest==null){p.sendMessage(PREFIX+ChatColor.RED+"Select a TO player, coordinate, or waypoint first.");return;}
+        Set<UUID> from=tpFrom.getOrDefault(id,new LinkedHashSet<>());
+        if(from.isEmpty()){
+            if(wp==null&&!tpCoords.containsKey(id)&&to!=null){Player t=Bukkit.getPlayer(to);if(t!=null){p.teleport(t.getLocation());p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported you to "+t.getName()+".");return;}}
+            p.teleport(dest);p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported you to the selected destination.");return;
+        }
+        int count=0;for(UUID uid:from){Player target=Bukkit.getPlayer(uid);if(target!=null){target.teleport(dest);count++;}}
+        p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported "+count+" player(s).");
+    }
+    private void saveWaypoint(Player p,String name,Location loc){
+        String n=name.trim().replaceAll("[^A-Za-z0-9 _-]","");if(n.isEmpty()||n.length()>32){p.sendMessage(PREFIX+ChatColor.RED+"Waypoint name must be 1–32 characters.");return;}
+        for(Waypoint w:waypoints.values())if(w.name.equalsIgnoreCase(n)){p.sendMessage(PREFIX+ChatColor.RED+"That waypoint name already exists.");return;}
+        String id=UUID.randomUUID().toString();waypoints.put(id,new Waypoint(id,n,loc.getWorld().getName(),loc.getX(),loc.getY(),loc.getZ()));saveWaypoints();p.sendMessage(PREFIX+ChatColor.GREEN+"Saved shared waypoint: "+n);openWaypoints(p,0);
+    }
+
     private void openChains(Player p,int page) {
         Profile pr=profile(p.getUniqueId()); List<Chain> all=new ArrayList<>(pr.chains.values());
         int pages=Math.max(1,(all.size()+44)/45); page=Math.max(0,Math.min(page,pages-1)); listPages.put(p.getUniqueId(),page);
@@ -210,6 +291,10 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             if(action.equals("newabuse-name")){String n=message.trim().replaceAll("[^A-Za-z0-9 _-]","");if(n.isEmpty()||n.length()>32){p.sendMessage(PREFIX+ChatColor.RED+"Use a name between 1 and 32 characters.");openAbuseList(p,false);return;}pendingAbuseNames.put(id,n);ask(p,"newabuse-command","Enter the command to run (without the leading slash):");}
             else if(action.equals("newabuse-command")){String n=pendingAbuseNames.remove(id),command=message.replaceFirst("^/","").trim();if(n==null||command.isEmpty()||command.contains("\n")){p.sendMessage(PREFIX+ChatColor.RED+"Invalid command.");openAbuseList(p,false);return;}String key=UUID.randomUUID().toString();abuseCommands.put(key,new AbuseCommand(key,n,command,id,true));saveAbuseCommands();p.sendMessage(PREFIX+ChatColor.GREEN+"Created and shared command: "+n);openAbuseList(p,false);}
             else if(action.startsWith("editabuse:")){String key=action.substring(9),command=message.replaceFirst("^/","").trim();AbuseCommand c=abuseCommands.get(key);if(c!=null&&canManageAbuse(p,c)&&!command.isEmpty()&&!command.contains("\n")){c.command=command;saveAbuseCommands();openAbuseCommand(p,key);}else{p.sendMessage(PREFIX+ChatColor.RED+"Could not update that command.");openAbuseList(p,false);}}
+            else if(action.equals("tpcoords")){
+                String[] a=message.trim().split("\\s+");try{if(a.length!=4)throw new IllegalArgumentException();World w=Bukkit.getWorld(a[0]);if(w==null)throw new IllegalArgumentException();tpCoords.put(id,new Location(w,Double.parseDouble(a[1]),Double.parseDouble(a[2]),Double.parseDouble(a[3])));tpWaypoint.remove(id);tpTo.remove(id);p.sendMessage(PREFIX+ChatColor.GREEN+"Coordinate destination selected.");openDailyTp(p);}catch(IllegalArgumentException ex){p.sendMessage(PREFIX+ChatColor.RED+"Use: world x y z (with a loaded world name).");openDailyTp(p);}
+            }
+            else if(action.equals("savewaypoint-current-name")){saveWaypoint(p,message,p.getLocation());}
             else if(action.equals("newchain")){String n=clean(message);if(n.isEmpty()){p.sendMessage(PREFIX+ChatColor.RED+"Invalid name.");return;}
                 Profile pr=profile(id);if(pr.chains.containsKey(n)){p.sendMessage(PREFIX+ChatColor.RED+"That name already exists.");return;}
                 pr.chains.put(n,new Chain(n));saveProfile(id);openEditor(p,n);
@@ -231,12 +316,29 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         s.sendMessage(PREFIX+"Use /ap, /ap list, /ap create <name>, /ap run <name>");return true;
     }
     @EventHandler public void onClick(InventoryClickEvent e) {
-        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL); if(!known)return;
+        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL)||title.equals(DAILY_USE)||title.equals(DAILY_TP)||title.equals(WAYPOINTS); if(!known)return;
         e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||!allowed(p)||e.getCurrentItem()==null||!e.getCurrentItem().hasItemMeta())return;
         String name=ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName()); if(name==null)return;
         UUID id=p.getUniqueId();
         if(title.equals(MAIN)){
-            switch(name){case "ADMIN ABUSE":openAbuse(p);break;case "COMMAND CHAINS":openChains(p,0);break;case "PLAYER TOOLS":p.sendMessage(PREFIX+"Use /tp, /effect and other server commands in your chains.");break;case "MY PROFILE":p.sendMessage(PREFIX+"Your profile is stored separately from other admins.");break;case "CLOSE":p.closeInventory();break;}return;
+            switch(name){case "ADMIN ABUSE":openAbuse(p);break;case "COMMAND CHAINS":openChains(p,0);break;case "DAILY USE":openDailyUse(p);break;case "MY PROFILE":p.sendMessage(PREFIX+"Your profile is stored separately from other admins.");break;case "CLOSE":p.closeInventory();break;}return;
+        }
+        if(title.equals(DAILY_USE)){if(name.equals("BACK")){openMain(p);return;}if(name.equals("TP")){openDailyTp(p);return;}return;}
+        if(title.equals(DAILY_TP)){
+            if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("RUN TP")){runDailyTp(p);return;}
+            if(name.equals("SET COORDINATES")){ask(p,"tpcoords","Enter destination as: world x y z");return;}
+            if(name.equals("WAYPOINTS")){openWaypoints(p,0);return;}
+            if(name.equals("SAVE CURRENT LOCATION")){ask(p,"savewaypoint-current-name","Enter a name for this shared waypoint:");return;}
+            UUID fuid=fromSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
+            if(fuid!=null&&e.isLeftClick()){Set<UUID> set=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());if(e.isShiftClick()){if(!set.add(fuid))set.remove(fuid);}else{set.clear();set.add(fuid);}openDailyTp(p);return;}
+            UUID tuid=toSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
+            if(tuid!=null&&e.isLeftClick()){tpTo.put(id,tuid);tpCoords.remove(id);tpWaypoint.remove(id);openDailyTp(p);return;}return;
+        }
+        if(title.equals(WAYPOINTS)){
+            if(name.equals("BACK TO TP")){openDailyTp(p);return;}if(name.equals("PREVIOUS")){openWaypoints(p,waypointPages.getOrDefault(id,0)-1);return;}if(name.equals("NEXT")){openWaypoints(p,waypointPages.getOrDefault(id,0)+1);return;}if(name.equals("RUN TP")){runDailyTp(p);return;}
+            UUID fuid=fromSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
+            if(fuid!=null&&e.isLeftClick()){Set<UUID> set=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());if(e.isShiftClick()){if(!set.add(fuid))set.remove(fuid);}else{set.clear();set.add(fuid);}openWaypoints(p,waypointPages.getOrDefault(id,0));return;}
+            String wid=waypointSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());if(wid!=null&&e.isLeftClick()){tpWaypoint.put(id,wid);tpCoords.remove(id);tpTo.remove(id);openWaypoints(p,waypointPages.getOrDefault(id,0));return;}return;
         }
         if(title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")){
             switch(name){case "BACK":openMain(p);break;case "YOUR COMMANDS":openAbuseList(p,false);break;case "SHARED COMMANDS":openAbuseList(p,true);break;case "THUNDER CALL":p.getWorld().strikeLightningEffect(p.getTargetBlockExact(64)==null?p.getLocation():p.getTargetBlockExact(64).getLocation());break;case "LAUNCH":p.setVelocity(p.getVelocity().setY(2.2));break;case "INFERNO":p.getWorld().spawnParticle(org.bukkit.Particle.FLAME,p.getLocation(),100,2,1,2,0.04);p.getWorld().playSound(p.getLocation(),org.bukkit.Sound.ENTITY_BLAZE_SHOOT,1,0.7f);break;case "RANDOM TP":{var l=p.getLocation();var r=l.clone().add((Math.random()-.5)*24,0,(Math.random()-.5)*24);r.setY(p.getWorld().getHighestBlockYAt(r)+1);if(p.getWorld().getBlockAt(r).isPassable())p.teleport(r);break;}}return;
