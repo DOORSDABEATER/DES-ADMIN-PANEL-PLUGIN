@@ -339,13 +339,13 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             if(name.equals("SAVE CURRENT LOCATION")){ask(p,"savewaypoint-current-name","Enter a name for this shared waypoint:");return;}
             if(e.getSlot()==4){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+fromHeadSlots().length-1)/fromHeadSlots().length);int page=fromPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);fromPlayerPages.put(id,Math.floorMod(page,pages));openDailyTp(p);return;}
             if(e.getSlot()==26){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+toHeadSlots().length-1)/toHeadSlots().length);int page=toPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);toPlayerPages.put(id,Math.floorMod(page,pages));openDailyTp(p);return;}
-            if(e.getSlot()==4){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+fromHeadSlots().length-1)/fromHeadSlots().length);int page=fromPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);fromPlayerPages.put(id,Math.floorMod(page,pages));openWaypoints(p,waypointPages.getOrDefault(id,0));return;}
             UUID fuid=fromSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
             if(fuid!=null&&e.isLeftClick()){Set<UUID> set=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());if(e.isShiftClick()){if(!set.add(fuid))set.remove(fuid);}else{set.clear();set.add(fuid);}openDailyTp(p);return;}
             UUID tuid=toSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
             if(tuid!=null&&e.isLeftClick()){tpTo.put(id,tuid);tpCoords.remove(id);tpWaypoint.remove(id);openDailyTp(p);return;}return;
         }
         if(title.equals(WAYPOINTS)){
+            if(e.getSlot()==4){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+fromHeadSlots().length-1)/fromHeadSlots().length);int page=fromPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);fromPlayerPages.put(id,Math.floorMod(page,pages));openWaypoints(p,waypointPages.getOrDefault(id,0));return;}
             if(name.equals("BACK TO TP")){openDailyTp(p);return;}if(name.equals("PREVIOUS")){openWaypoints(p,waypointPages.getOrDefault(id,0)-1);return;}if(name.equals("NEXT")){openWaypoints(p,waypointPages.getOrDefault(id,0)+1);return;}if(name.equals("RUN TP")){runDailyTp(p);return;}
             UUID fuid=fromSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
             if(fuid!=null&&e.isLeftClick()){Set<UUID> set=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());if(e.isShiftClick()){if(!set.add(fuid))set.remove(fuid);}else{set.clear();set.add(fuid);}openWaypoints(p,waypointPages.getOrDefault(id,0));return;}
