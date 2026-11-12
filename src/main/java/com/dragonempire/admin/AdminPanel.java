@@ -47,6 +47,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private static final String DAILY_USE = ChatColor.DARK_GREEN + "✦ DAILY USE";
     private static final String DAILY_TP = ChatColor.DARK_GREEN + "✦ DAILY USE | TP";
     private static final String DAILY_WEATHER = ChatColor.DARK_GREEN + "✦ DAILY USE | WEATHER";
+    private static final String DAILY_TIME = ChatColor.DARK_GREEN + "✦ DAILY USE | TIME";
     private static final String WAYPOINTS = ChatColor.DARK_GREEN + "✦ SHARED WAYPOINTS";
 
     private static final class Step {
@@ -195,9 +196,11 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     }
     private int[] fromHeadSlots(){return new int[]{0,1,2,3,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21};}
     private int[] toHeadSlots(){return new int[]{22,23,24,25,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44};}
-    private void openDailyUse(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_USE);inv.setItem(21,item(Material.ENDER_PEARL,ChatColor.GREEN+"TP","","Teleport players to players or coordinates",ChatColor.YELLOW+"Click to open"));inv.setItem(23,item(Material.WEATHERED_COPPER,ChatColor.AQUA+"WEATHER","","Change weather across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
+    private void openDailyUse(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_USE);inv.setItem(21,item(Material.ENDER_PEARL,ChatColor.GREEN+"TP","","Teleport players to players or coordinates",ChatColor.YELLOW+"Click to open"));inv.setItem(23,item(Material.WEATHERED_COPPER,ChatColor.AQUA+"WEATHER","","Change weather across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(25,item(Material.CLOCK,ChatColor.GOLD+"TIME","","Change time across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
     private void openDailyWeather(Player p){Inventory inv=Bukkit.createInventory(null,27,DAILY_WEATHER);inv.setItem(11,item(Material.WATER_BUCKET,ChatColor.AQUA+"RAIN","","Enable rain in every server world"));inv.setItem(13,item(Material.LIGHTNING_ROD,ChatColor.YELLOW+"THUNDER","","Enable thunderstorms in every server world"));inv.setItem(15,item(Material.SUNFLOWER,ChatColor.GOLD+"CLEAR","","Clear rain and thunder in every server world"));inv.setItem(22,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
     private void setServerWeather(String weather){for(World world:Bukkit.getWorlds()){if(weather.equals("RAIN")){world.setStorm(true);world.setThundering(false);world.setWeatherDuration(20*60*10);world.setThunderDuration(0);}else if(weather.equals("THUNDER")){world.setStorm(true);world.setThundering(true);world.setWeatherDuration(20*60*10);world.setThunderDuration(20*60*10);}else{world.setStorm(false);world.setThundering(false);world.setWeatherDuration(20*60*10);world.setThunderDuration(20*60*10);}}}
+    private void openDailyTime(Player p){Inventory inv=Bukkit.createInventory(null,27,DAILY_TIME);inv.setItem(10,item(Material.SUNRISE,ChatColor.YELLOW+"DAWN","","Set every server world to dawn"));inv.setItem(11,item(Material.SUNFLOWER,ChatColor.GOLD+"DAY","","Set every server world to daytime"));inv.setItem(12,item(Material.CLOCK,ChatColor.YELLOW+"NOON","","Set every server world to noon"));inv.setItem(13,item(Material.COMPASS,ChatColor.GOLD+"AFTERNOON","","Set every server world to afternoon"));inv.setItem(14,item(Material.CLOCK,ChatColor.YELLOW+"EVENING","","Set every server world to evening"));inv.setItem(15,item(Material.REDSTONE_TORCH,ChatColor.BLUE+"NIGHT","","Set every server world to night"));inv.setItem(16,item(Material.BLUE_ICE,ChatColor.DARK_PURPLE+"MIDNIGHT","","Set every server world to midnight"));inv.setItem(22,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
+    private void setServerTime(long time){for(World world:Bukkit.getWorlds())world.setTime(time);}
     private void openDailyTp(Player p){
         UUID id=p.getUniqueId();Inventory inv=Bukkit.createInventory(null,54,DAILY_TP);Set<UUID> selected=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());
         List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int fp=Math.max(0,Math.min(fromPlayerPages.getOrDefault(id,0),Math.max(0,(online.size()-1)/fromHeadSlots().length)));int tp=Math.max(0,Math.min(toPlayerPages.getOrDefault(id,0),Math.max(0,(online.size()-1)/toHeadSlots().length)));fromPlayerPages.put(id,fp);toPlayerPages.put(id,tp);
@@ -326,15 +329,16 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         s.sendMessage(PREFIX+"Use /ap, /ap list, /ap create <name>, /ap run <name>");return true;
     }
     @EventHandler public void onClick(InventoryClickEvent e) {
-        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL)||title.equals(DAILY_USE)||title.equals(DAILY_TP)||title.equals(DAILY_WEATHER)||title.equals(WAYPOINTS); if(!known)return;
+        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL)||title.equals(DAILY_USE)||title.equals(DAILY_TP)||title.equals(DAILY_WEATHER)||title.equals(DAILY_TIME)||title.equals(WAYPOINTS); if(!known)return;
         e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||!allowed(p)||e.getCurrentItem()==null||!e.getCurrentItem().hasItemMeta())return;
         String name=ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName()); if(name==null)return;
         UUID id=p.getUniqueId();
         if(title.equals(MAIN)){
             switch(name){case "ADMIN ABUSE":openAbuse(p);break;case "COMMAND CHAINS":openChains(p,0);break;case "DAILY USE":openDailyUse(p);break;case "MY PROFILE":p.sendMessage(PREFIX+"Your profile is stored separately from other admins.");break;case "CLOSE":p.closeInventory();break;}return;
         }
-        if(title.equals(DAILY_USE)){if(name.equals("BACK")){openMain(p);return;}if(name.equals("TP")){openDailyTp(p);return;}if(name.equals("WEATHER")){openDailyWeather(p);return;}return;}
+        if(title.equals(DAILY_USE)){if(name.equals("BACK")){openMain(p);return;}if(name.equals("TP")){openDailyTp(p);return;}if(name.equals("WEATHER")){openDailyWeather(p);return;}if(name.equals("TIME")){openDailyTime(p);return;}return;}
         if(title.equals(DAILY_WEATHER)){if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("RAIN")||name.equals("THUNDER")||name.equals("CLEAR")){setServerWeather(name);p.sendMessage(PREFIX+ChatColor.GREEN+"Weather set to "+name.toLowerCase(Locale.ROOT)+" in all server worlds.");openDailyWeather(p);return;}return;}
+        if(title.equals(DAILY_TIME)){if(name.equals("BACK")){openDailyUse(p);return;}long time=switch(name){case "DAWN"->0L;case "DAY"->1000L;case "NOON"->6000L;case "AFTERNOON"->9000L;case "EVENING"->12000L;case "NIGHT"->13000L;case "MIDNIGHT"->18000L;default->-1L;};if(time>=0){setServerTime(time);p.sendMessage(PREFIX+ChatColor.GREEN+"Time set to "+name.toLowerCase(Locale.ROOT)+" in all server worlds.");openDailyTime(p);}return;}
         if(title.equals(DAILY_TP)){
             if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("RUN TP")){runDailyTp(p);return;}
             if(name.equals("SET COORDINATES")){ask(p,"tpcoords","Enter destination as: world x y z");return;}
