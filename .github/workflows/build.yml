@@ -1,13 +1,15 @@
-name: Build Dragon Empire Admin Panel
+name: Build and Paper smoke test
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  build-and-paper-test:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -26,6 +28,54 @@ jobs:
 
       - name: Build plugin
         run: gradle build
+
+      - name: Download Paper 26.2 stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -H "User-Agent: DragonEmpireAdminPanel/1.0 (https://github.com/DOORSDABEATER/DES-ADMIN-PANEL-PLUGIN)" \
+            https://fill.papermc.io/v3/projects/paper/versions/26.2/builds > paper-builds.json
+          PAPER_URL="$(jq -r 'first(.[] | select(.channel == "STABLE") | .downloads."server:default".url) // empty' paper-builds.json)"
+          if [[ -z "$PAPER_URL" ]]; then
+            echo "No stable Paper 26.2 server build was returned."
+            cat paper-builds.json
+            exit 1
+          fi
+          curl -fL "$PAPER_URL" -o paper.jar
+
+      - name: Smoke test plugin on Paper
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p paper-test/plugins
+          cp build/libs/*.jar paper-test/plugins/
+          cd paper-test
+          echo "eula=true" > eula.txt
+          timeout 120s java -Xms1G -Xmx2G -jar ../paper.jar --nogui > paper-test.log 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 90); do
+            if grep -q "Done (" paper-test.log; then break; fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              cat paper-test.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if ! grep -q "Done (" paper-test.log; then
+            cat paper-test.log
+            echo "Paper did not finish starting within 180 seconds."
+            kill "$SERVER_PID" 2>/dev/null || true
+            exit 1
+          fi
+          if ! grep -q "Dragon Empire Admin Panel enabled." paper-test.log; then
+            cat paper-test.log
+            echo "Plugin did not report a successful onEnable."
+            kill "$SERVER_PID" 2>/dev/null || true
+            exit 1
+          fi
+          grep -E "DragonEmpireAdminPanel|Dragon Empire Admin Panel enabled|Done \(" paper-test.log
+          kill "$SERVER_PID" 2>/dev/null || true
+          wait "$SERVER_PID" 2>/dev/null || true
 
       - name: Upload plugin JAR
         uses: actions/upload-artifact@v4
