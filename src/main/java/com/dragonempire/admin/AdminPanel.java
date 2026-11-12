@@ -204,6 +204,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         fromSlots.put(id,fm);toSlots.put(id,tm);
         inv.setItem(45,item(Material.LIME_DYE,ChatColor.GREEN+"RUN TP"));
         inv.setItem(47,item(Material.COMPASS,ChatColor.AQUA+"SET COORDINATES","","Enter world x y z in chat"));
+        inv.setItem(48,item(Material.WRITABLE_BOOK,ChatColor.GOLD+"SAVE COORDINATES","","Save entered coordinates as a shared waypoint"));
         inv.setItem(49,item(Material.MAP,ChatColor.GOLD+"WAYPOINTS","","Open globally shared coordinates"));
         inv.setItem(51,item(Material.LODESTONE,ChatColor.YELLOW+"SAVE CURRENT LOCATION","","Save your position as a shared waypoint"));
         inv.setItem(53,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);
@@ -295,6 +296,8 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
                 String[] a=message.trim().split("\\s+");try{if(a.length!=4)throw new IllegalArgumentException();World w=Bukkit.getWorld(a[0]);if(w==null)throw new IllegalArgumentException();tpCoords.put(id,new Location(w,Double.parseDouble(a[1]),Double.parseDouble(a[2]),Double.parseDouble(a[3])));tpWaypoint.remove(id);tpTo.remove(id);p.sendMessage(PREFIX+ChatColor.GREEN+"Coordinate destination selected.");openDailyTp(p);}catch(IllegalArgumentException ex){p.sendMessage(PREFIX+ChatColor.RED+"Use: world x y z (with a loaded world name).");openDailyTp(p);}
             }
             else if(action.equals("savewaypoint-current-name")){saveWaypoint(p,message,p.getLocation());}
+            else if(action.equals("savewaypoint-name")){String n=message.trim();if(n.isEmpty()||n.length()>32){p.sendMessage(PREFIX+ChatColor.RED+"Use a waypoint name between 1 and 32 characters.");openDailyTp(p);return;}pendingAbuseNames.put(id,"WAYPOINT:"+n);ask(p,"savewaypoint-coords","Enter coordinates as: world x y z");}
+            else if(action.equals("savewaypoint-coords")){String pending=pendingAbuseNames.remove(id);String[] a=message.trim().split("\\s+");try{if(pending==null||!pending.startsWith("WAYPOINT:")||a.length!=4)throw new IllegalArgumentException();World w=Bukkit.getWorld(a[0]);if(w==null)throw new IllegalArgumentException();Location loc=new Location(w,Double.parseDouble(a[1]),Double.parseDouble(a[2]),Double.parseDouble(a[3]));saveWaypoint(p,pending.substring(9),loc);}catch(IllegalArgumentException ex){p.sendMessage(PREFIX+ChatColor.RED+"Use valid coordinates: world x y z");openDailyTp(p);}}
             else if(action.equals("newchain")){String n=clean(message);if(n.isEmpty()){p.sendMessage(PREFIX+ChatColor.RED+"Invalid name.");return;}
                 Profile pr=profile(id);if(pr.chains.containsKey(n)){p.sendMessage(PREFIX+ChatColor.RED+"That name already exists.");return;}
                 pr.chains.put(n,new Chain(n));saveProfile(id);openEditor(p,n);
@@ -327,6 +330,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         if(title.equals(DAILY_TP)){
             if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("RUN TP")){runDailyTp(p);return;}
             if(name.equals("SET COORDINATES")){ask(p,"tpcoords","Enter destination as: world x y z");return;}
+            if(name.equals("SAVE COORDINATES")){ask(p,"savewaypoint-name","Enter a name for this shared waypoint:");return;}
             if(name.equals("WAYPOINTS")){openWaypoints(p,0);return;}
             if(name.equals("SAVE CURRENT LOCATION")){ask(p,"savewaypoint-current-name","Enter a name for this shared waypoint:");return;}
             UUID fuid=fromSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
