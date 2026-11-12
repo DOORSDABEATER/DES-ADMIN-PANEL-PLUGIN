@@ -10,6 +10,11 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.*;
 import org.bukkit.event.inventory.*;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.BanList;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -36,6 +41,11 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private final Map<UUID, Map<Integer, String>> waypointSlots = new HashMap<>();
     private final Map<UUID, Integer> waypointPages = new HashMap<>();
     private final Map<UUID, Integer> activityLogPages = new HashMap<>();
+    private final Map<UUID, Integer> accountPages = new HashMap<>();
+    private final Map<UUID, Map<Integer, UUID>> accountSlots = new HashMap<>();
+    private final Map<UUID, UUID> selectedAccounts = new HashMap<>();
+    private final Set<UUID> mutedPlayers = new HashSet<>();
+    private final Map<UUID, PlayerRecord> playerRecords = new HashMap<>();
     private final Map<UUID, Integer> fromPlayerPages = new HashMap<>(), toPlayerPages = new HashMap<>();
     private final Map<String, Waypoint> waypoints = new LinkedHashMap<>();
     private static final String PREFIX = ChatColor.DARK_PURPLE + "DES " + ChatColor.GRAY + "» ";
@@ -52,6 +62,9 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private static final String DAILY_RULES = ChatColor.DARK_GREEN + "✦ IMPORTANT GAMERULES";
     private static final String WAYPOINTS = ChatColor.DARK_GREEN + "✦ SHARED WAYPOINTS";
     private static final String ACTIVITY_LOG = ChatColor.DARK_AQUA + "✦ ADMIN ACTIVITY LOG";
+    private static final String ACCOUNT_LIST = ChatColor.DARK_GREEN + "✦ ACCOUNT MANAGEMENT";
+    private static final String ACCOUNT_DETAIL = ChatColor.DARK_GREEN + "✦ PLAYER MANAGEMENT";
+    private static final String ACCOUNT_INFO = ChatColor.DARK_AQUA + "✦ ACCOUNT INFORMATION";
 
     private static final class Step {
         String command; long delay;
@@ -61,6 +74,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         String name; List<Step> steps = new ArrayList<>();
         Chain(String name) { this.name = name; }
     }
+    private static final class PlayerRecord { long firstJoin, lastJoin, totalPlayMillis, sessionStart; int deaths, kills; }
     private static final class Profile {
         LinkedHashMap<String, Chain> chains = new LinkedHashMap<>();
         Set<String> favourites = new HashSet<>();
@@ -97,12 +111,15 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         getDataFolder().mkdirs();
         loadAbuseCommands();
         loadWaypoints();
+        loadPlayerRecords();
+        loadMutedPlayers();
+        for (Player online : Bukkit.getOnlinePlayers()) startSession(online);
         getServer().getPluginManager().registerEvents(this, this);
         Objects.requireNonNull(getCommand("adminpanel")).setExecutor(this);
         Objects.requireNonNull(getCommand("adminpanel")).setTabCompleter(this);
         getLogger().info("Dragon Empire Admin Panel enabled.");
     }
-    @Override public void onDisable() { for (UUID id : profiles.keySet()) saveProfile(id); }
+    @Override public void onDisable() { for (UUID id : profiles.keySet()) saveProfile(id); long now=System.currentTimeMillis(); for(Player online:Bukkit.getOnlinePlayers()){PlayerRecord r=record(online.getUniqueId());if(r.sessionStart>0){r.totalPlayMillis+=Math.max(0,now-r.sessionStart);r.sessionStart=now;}} savePlayerRecords();saveMutedPlayers(); }
 
     private boolean allowed(CommandSender sender) {
         if (sender.hasPermission("dragonempire.admin")) return true;
@@ -230,7 +247,31 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     }
     private int[] fromHeadSlots(){return new int[]{0,1,2,3,9,10,11,12,27,28,29,30,36,37,38,39};}
     private int[] toHeadSlots(){return new int[]{5,6,7,8,14,15,16,17,32,33,34,35,41,42,43,44};}
-    private void openDailyUse(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_USE);inv.setItem(20,item(Material.ENDER_PEARL,ChatColor.GREEN+"TP","","Teleport players to players or coordinates",ChatColor.YELLOW+"Click to open"));inv.setItem(22,item(Material.WEATHERED_COPPER,ChatColor.AQUA+"WEATHER","","Change weather across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(24,item(Material.CLOCK,ChatColor.GOLD+"TIME","","Change time across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(29,item(Material.COMMAND_BLOCK,ChatColor.GOLD+"IMPORTANT GAMERULES","","View and toggle important gamerules across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(33,item(Material.BOOK,ChatColor.AQUA+"ACTIVITY LOG","","View recent admin actions",ChatColor.YELLOW+"Click to open"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
+    private void openDailyUse(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_USE);inv.setItem(20,item(Material.ENDER_PEARL,ChatColor.GREEN+"TP","","Teleport players to players or coordinates",ChatColor.YELLOW+"Click to open"));inv.setItem(22,item(Material.WEATHERED_COPPER,ChatColor.AQUA+"WEATHER","","Change weather across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(24,item(Material.CLOCK,ChatColor.GOLD+"TIME","","Change time across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(29,item(Material.COMMAND_BLOCK,ChatColor.GOLD+"IMPORTANT GAMERULES","","View and toggle important gamerules across every server world",ChatColor.YELLOW+"Click to open"));inv.setItem(31,item(Material.PLAYER_HEAD,ChatColor.GREEN+"ACCOUNT MANAGEMENT","","Manage online and offline player accounts",ChatColor.YELLOW+"Click to open"));inv.setItem(33,item(Material.BOOK,ChatColor.AQUA+"ACTIVITY LOG","","View recent admin actions",ChatColor.YELLOW+"Click to open"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
+
+    private File playerRecordsFile(){return new File(getDataFolder(),"player-records.yml");}
+    private File mutedPlayersFile(){return new File(getDataFolder(),"muted-players.yml");}
+    private PlayerRecord record(UUID id){return playerRecords.computeIfAbsent(id,k->new PlayerRecord());}
+    private void loadPlayerRecords(){playerRecords.clear();YamlConfiguration y=YamlConfiguration.loadConfiguration(playerRecordsFile());if(y.getConfigurationSection("players")==null)return;for(String key:y.getConfigurationSection("players").getKeys(false)){try{UUID id=UUID.fromString(key);String q="players."+key;PlayerRecord r=new PlayerRecord();r.firstJoin=y.getLong(q+".firstJoin");r.lastJoin=y.getLong(q+".lastJoin");r.totalPlayMillis=y.getLong(q+".totalPlayMillis");r.deaths=y.getInt(q+".deaths");r.kills=y.getInt(q+".kills");playerRecords.put(id,r);}catch(IllegalArgumentException ignored){}}}
+    private void savePlayerRecords(){YamlConfiguration y=new YamlConfiguration();for(Map.Entry<UUID,PlayerRecord> e:playerRecords.entrySet()){String q="players."+e.getKey();PlayerRecord r=e.getValue();y.set(q+".firstJoin",r.firstJoin);y.set(q+".lastJoin",r.lastJoin);y.set(q+".totalPlayMillis",r.totalPlayMillis);y.set(q+".deaths",r.deaths);y.set(q+".kills",r.kills);}try{y.save(playerRecordsFile());}catch(IOException ex){getLogger().severe("Could not save player records: "+ex.getMessage());}}
+    private void loadMutedPlayers(){mutedPlayers.clear();YamlConfiguration y=YamlConfiguration.loadConfiguration(mutedPlayersFile());for(String raw:y.getStringList("muted"))try{mutedPlayers.add(UUID.fromString(raw));}catch(IllegalArgumentException ignored){}}
+    private void saveMutedPlayers(){YamlConfiguration y=new YamlConfiguration();List<String> ids=new ArrayList<>();for(UUID id:mutedPlayers)ids.add(id.toString());y.set("muted",ids);try{y.save(mutedPlayersFile());}catch(IOException ex){getLogger().severe("Could not save muted players: "+ex.getMessage());}}
+    private void startSession(Player p){PlayerRecord r=record(p.getUniqueId());long now=System.currentTimeMillis();if(r.firstJoin==0)r.firstJoin=now;r.lastJoin=now;r.sessionStart=now;savePlayerRecords();}
+    @EventHandler public void onPlayerJoin(PlayerJoinEvent e){startSession(e.getPlayer());}
+    @EventHandler public void onPlayerQuit(PlayerQuitEvent e){PlayerRecord r=record(e.getPlayer().getUniqueId());if(r.sessionStart>0){r.totalPlayMillis+=Math.max(0,System.currentTimeMillis()-r.sessionStart);r.sessionStart=0;}savePlayerRecords();}
+    @EventHandler public void onPlayerDeath(PlayerDeathEvent e){record(e.getEntity().getUniqueId()).deaths++;Player killer=e.getEntity().getKiller();if(killer!=null)record(killer.getUniqueId()).kills++;savePlayerRecords();}
+    private String duration(long millis){long sec=Math.max(0,millis/1000),days=sec/86400,hours=(sec%86400)/3600,mins=(sec%3600)/60;return days+"d "+hours+"h "+mins+"m";}
+    private String date(long millis){return millis<=0?"Unknown":new java.text.SimpleDateFormat("dd MMM yyyy HH:mm").format(new java.util.Date(millis));}
+    private List<OfflinePlayer> knownPlayers(){Map<UUID,OfflinePlayer> unique=new LinkedHashMap<>();for(OfflinePlayer op:Bukkit.getOfflinePlayers())if(op.getName()!=null)unique.put(op.getUniqueId(),op);for(Player online:Bukkit.getOnlinePlayers())unique.put(online.getUniqueId(),online);List<OfflinePlayer> all=new ArrayList<>(unique.values());all.sort((a,b)->{if(a.isOnline()!=b.isOnline())return a.isOnline()?-1:1;return String.CASE_INSENSITIVE_ORDER.compare(a.getName()==null?"":a.getName(),b.getName()==null?"":b.getName());});return all;}
+    private ItemStack offlinePlayerHead(OfflinePlayer target){ItemStack head=new ItemStack(Material.PLAYER_HEAD);SkullMeta meta=(SkullMeta)head.getItemMeta();meta.setOwningPlayer(target);meta.setDisplayName((target.isOnline()?ChatColor.GREEN:ChatColor.GRAY)+target.getName());meta.setLore(Arrays.asList(target.isOnline()?ChatColor.GREEN+"ONLINE":ChatColor.RED+"OFFLINE",ChatColor.YELLOW+"Click to manage"));head.setItemMeta(meta);return head;}
+    private void openAccountList(Player admin,int page){List<OfflinePlayer> all=knownPlayers();int pages=Math.max(1,(all.size()+44)/45);page=Math.max(0,Math.min(page,pages-1));UUID id=admin.getUniqueId();accountPages.put(id,page);Inventory inv=Bukkit.createInventory(null,54,ACCOUNT_LIST+" "+(page+1)+"/"+pages);Map<Integer,UUID> map=new HashMap<>();int start=page*45;for(int i=start;i<Math.min(start+45,all.size());i++){OfflinePlayer op=all.get(i);int slot=i-start;map.put(slot,op.getUniqueId());inv.setItem(slot,offlinePlayerHead(op));}accountSlots.put(id,map);if(all.isEmpty())inv.setItem(22,item(Material.PAPER,ChatColor.GRAY+"NO PLAYERS FOUND","","Players appear after joining."));inv.setItem(45,item(Material.ARROW,ChatColor.YELLOW+"PREVIOUS"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));inv.setItem(53,item(Material.ARROW,ChatColor.YELLOW+"NEXT"));fill(inv);admin.openInventory(inv);}
+    private OfflinePlayer selectedAccount(Player admin){UUID target=selectedAccounts.get(admin.getUniqueId());return target==null?null:Bukkit.getOfflinePlayer(target);}
+    private void openAccountDetail(Player admin){OfflinePlayer target=selectedAccount(admin);if(target==null){openAccountList(admin,0);return;}UUID uid=target.getUniqueId();boolean online=target.isOnline(),muted=mutedPlayers.contains(uid),banned=target.getName()!=null&&Bukkit.getBanList(BanList.Type.NAME).isBanned(target.getName()),whitelisted=target.isWhitelisted();Inventory inv=Bukkit.createInventory(null,54,ACCOUNT_DETAIL);inv.setItem(13,offlinePlayerHead(target));inv.setItem(10,item(Material.IRON_BOOTS,ChatColor.YELLOW+"KICK","","Remove this player from the server",online?ChatColor.GREEN+"Online":ChatColor.GRAY+"Offline"));inv.setItem(12,item(banned?Material.LIME_DYE:Material.BARRIER,ChatColor.RED+(banned?"UNBAN":"BAN"),"",banned?"Remove their server ban":"Ban this player"));inv.setItem(14,item(muted?Material.LIME_DYE:Material.GRAY_DYE,muted?ChatColor.GREEN+"UNMUTE":ChatColor.RED+"MUTE","","Server-wide chat mute",muted?"Currently muted":"Currently not muted"));inv.setItem(16,item(whitelisted?Material.LIME_DYE:Material.GRAY_DYE,whitelisted?ChatColor.GREEN+"REMOVE WHITELIST":ChatColor.AQUA+"WHITELIST","","Toggle server whitelist status"));inv.setItem(31,item(Material.BOOK,ChatColor.AQUA+"ACCOUNT INFO","","Join history, playtime, deaths and kills"));inv.setItem(33,item(Material.ENDER_PEARL,ChatColor.GREEN+"TELEPORT TO PLAYER","",online?"Teleport yourself to this player":"Player is offline"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);admin.openInventory(inv);}
+    private void openAccountInfo(Player admin){OfflinePlayer target=selectedAccount(admin);if(target==null){openAccountList(admin,0);return;}PlayerRecord r=record(target.getUniqueId());long now=System.currentTimeMillis(),total=r.totalPlayMillis+(r.sessionStart>0?Math.max(0,now-r.sessionStart):0);Inventory inv=Bukkit.createInventory(null,27,ACCOUNT_INFO);inv.setItem(10,item(Material.CLOCK,ChatColor.GOLD+"FIRST JOIN","",date(r.firstJoin)));inv.setItem(11,item(Material.CLOCK,ChatColor.AQUA+"LAST JOIN","",date(r.lastJoin)));inv.setItem(13,item(Material.PLAYER_HEAD,ChatColor.GREEN+"CURRENT SESSION","",target.isOnline()&&r.sessionStart>0?duration(now-r.sessionStart):"Offline"));inv.setItem(14,item(Material.PAPER,ChatColor.YELLOW+"TOTAL PLAYTIME","",duration(total)));inv.setItem(15,item(Material.TOTEM_OF_UNDYING,ChatColor.RED+"DEATHS","",String.valueOf(r.deaths)));inv.setItem(16,item(Material.IRON_SWORD,ChatColor.DARK_RED+"PLAYER KILLS","",String.valueOf(r.kills)));inv.setItem(22,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);admin.openInventory(inv);}
+    private void toggleMute(Player admin,OfflinePlayer target){UUID uid=target.getUniqueId();if(mutedPlayers.remove(uid)){admin.sendMessage(PREFIX+ChatColor.GREEN+target.getName()+" can chat again.");logActivity(admin,"UNMUTE",target.getName());}else{mutedPlayers.add(uid);admin.sendMessage(PREFIX+ChatColor.RED+target.getName()+" is now muted server-wide.");logActivity(admin,"MUTE",target.getName());}saveMutedPlayers();openAccountDetail(admin);}
+    private void toggleWhitelist(Player admin,OfflinePlayer target){boolean add=!target.isWhitelisted();target.setWhitelisted(add);admin.sendMessage(PREFIX+(add?ChatColor.GREEN+"Added ":"Removed ")+target.getName()+(add?" to":" from")+" the whitelist.");logActivity(admin,"WHITELIST",target.getName()+" "+(add?"added":"removed"));openAccountDetail(admin);}
+    private void toggleBan(Player admin,OfflinePlayer target){String name=target.getName();if(name==null){admin.sendMessage(PREFIX+ChatColor.RED+"Unknown player name.");return;}if(Bukkit.getBanList(BanList.Type.NAME).isBanned(name)){Bukkit.getBanList(BanList.Type.NAME).pardon(name);admin.sendMessage(PREFIX+ChatColor.GREEN+"Unbanned "+name+".");logActivity(admin,"UNBAN",name);}else{Bukkit.getBanList(BanList.Type.NAME).addBan(name,"Banned by "+admin.getName(),null,admin.getName());Player online=target.getPlayer();if(online!=null)online.kickPlayer(ChatColor.RED+"You are banned from this server.");admin.sendMessage(PREFIX+ChatColor.RED+"Banned "+name+".");logActivity(admin,"BAN",name);}openAccountDetail(admin);}
+
     private void openDailyWeather(Player p){Inventory inv=Bukkit.createInventory(null,27,DAILY_WEATHER);inv.setItem(11,item(Material.WATER_BUCKET,ChatColor.AQUA+"RAIN","","Enable rain in every server world"));inv.setItem(13,item(Material.LIGHTNING_ROD,ChatColor.YELLOW+"THUNDER","","Enable thunderstorms in every server world"));inv.setItem(15,item(Material.SUNFLOWER,ChatColor.GOLD+"CLEAR","","Clear rain and thunder in every server world"));inv.setItem(22,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
     private void setServerWeather(String weather){for(World world:Bukkit.getWorlds()){if(weather.equals("RAIN")){world.setStorm(true);world.setThundering(false);world.setWeatherDuration(20*60*10);world.setThunderDuration(0);}else if(weather.equals("THUNDER")){world.setStorm(true);world.setThundering(true);world.setWeatherDuration(20*60*10);world.setThunderDuration(20*60*10);}else{world.setStorm(false);world.setThundering(false);world.setWeatherDuration(20*60*10);world.setThunderDuration(20*60*10);}}}
     private void openDailyTime(Player p){Inventory inv=Bukkit.createInventory(null,27,DAILY_TIME);inv.setItem(10,item(Material.YELLOW_DYE,ChatColor.YELLOW+"DAWN","","Set every server world to dawn"));inv.setItem(11,item(Material.SUNFLOWER,ChatColor.GOLD+"DAY","","Set every server world to daytime"));inv.setItem(12,item(Material.CLOCK,ChatColor.YELLOW+"NOON","","Set every server world to noon"));inv.setItem(13,item(Material.COMPASS,ChatColor.GOLD+"AFTERNOON","","Set every server world to afternoon"));inv.setItem(14,item(Material.CLOCK,ChatColor.YELLOW+"EVENING","","Set every server world to evening"));inv.setItem(15,item(Material.REDSTONE_TORCH,ChatColor.BLUE+"NIGHT","","Set every server world to night"));inv.setItem(16,item(Material.BLUE_ICE,ChatColor.DARK_PURPLE+"MIDNIGHT","","Set every server world to midnight"));inv.setItem(22,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
@@ -335,7 +376,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         }
     }
     @EventHandler public void onChat(AsyncPlayerChatEvent e) {
-        UUID id=e.getPlayer().getUniqueId(); String action=chatActions.remove(id); if(action==null)return;
+        UUID id=e.getPlayer().getUniqueId(); if(mutedPlayers.contains(id)){e.setCancelled(true);e.getPlayer().sendMessage(PREFIX+ChatColor.RED+"You are muted and cannot chat.");return;} String action=chatActions.remove(id); if(action==null)return;
         e.setCancelled(true); String message=e.getMessage();
         Bukkit.getScheduler().runTask(this,()->{
             Player p=Bukkit.getPlayer(id); if(p==null)return;
@@ -370,14 +411,24 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         s.sendMessage(PREFIX+"Use /ap, /ap list, /ap create <name>, /ap run <name>");return true;
     }
     @EventHandler public void onClick(InventoryClickEvent e) {
-        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL)||title.equals(DAILY_USE)||title.equals(DAILY_TP)||title.equals(DAILY_WEATHER)||title.equals(DAILY_TIME)||title.equals(DAILY_RULES)||title.equals(WAYPOINTS)||title.startsWith(ACTIVITY_LOG+" "); if(!known)return;
+        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(ACCOUNT_LIST+" ")||title.equals(ACCOUNT_DETAIL)||title.equals(ACCOUNT_INFO)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL)||title.equals(DAILY_USE)||title.equals(DAILY_TP)||title.equals(DAILY_WEATHER)||title.equals(DAILY_TIME)||title.equals(DAILY_RULES)||title.equals(WAYPOINTS)||title.startsWith(ACTIVITY_LOG+" "); if(!known)return;
         e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||!allowed(p)||e.getCurrentItem()==null||!e.getCurrentItem().hasItemMeta())return;
         String name=ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName()); if(name==null)return;
         UUID id=p.getUniqueId();
         if(title.equals(MAIN)){
             switch(name){case "ADMIN ABUSE":openAbuse(p);break;case "COMMAND CHAINS":openChains(p,0);break;case "DAILY USE":openDailyUse(p);break;case "MY PROFILE":p.sendMessage(PREFIX+"Your profile is stored separately from other admins.");break;case "CLOSE":p.closeInventory();break;}return;
         }
-        if(title.equals(DAILY_USE)){if(name.equals("BACK")){openMain(p);return;}if(name.equals("TP")){openDailyTp(p);return;}if(name.equals("WEATHER")){openDailyWeather(p);return;}if(name.equals("TIME")){openDailyTime(p);return;}if(name.equals("IMPORTANT GAMERULES")){openDailyRules(p);return;}if(name.equals("ACTIVITY LOG")){openActivityLog(p,0);return;}return;}
+        if(title.equals(DAILY_USE)){if(name.equals("BACK")){openMain(p);return;}if(name.equals("TP")){openDailyTp(p);return;}if(name.equals("WEATHER")){openDailyWeather(p);return;}if(name.equals("TIME")){openDailyTime(p);return;}if(name.equals("IMPORTANT GAMERULES")){openDailyRules(p);return;}if(name.equals("ACCOUNT MANAGEMENT")){openAccountList(p,0);return;}if(name.equals("ACTIVITY LOG")){openActivityLog(p,0);return;}return;}
+        if(title.startsWith(ACCOUNT_LIST+" ")){
+            int page=accountPages.getOrDefault(id,0);if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("PREVIOUS")){openAccountList(p,page-1);return;}if(name.equals("NEXT")){openAccountList(p,page+1);return;}UUID target=accountSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());if(target!=null){selectedAccounts.put(id,target);openAccountDetail(p);}return;
+        }
+        if(title.equals(ACCOUNT_DETAIL)){
+            OfflinePlayer target=selectedAccount(p);if(target==null){openAccountList(p,0);return;}if(name.equals("BACK")){openAccountList(p,accountPages.getOrDefault(id,0));return;}
+            if(name.equals("KICK")){Player online=target.getPlayer();if(online!=null){online.kickPlayer(ChatColor.RED+"Kicked by an administrator.");logActivity(p,"KICK",target.getName());p.sendMessage(PREFIX+ChatColor.YELLOW+"Kicked "+target.getName()+".");}else p.sendMessage(PREFIX+ChatColor.RED+"That player is offline.");openAccountDetail(p);return;}
+            if(name.equals("BAN")||name.equals("UNBAN")){toggleBan(p,target);return;}if(name.equals("MUTE")||name.equals("UNMUTE")){toggleMute(p,target);return;}if(name.equals("WHITELIST")||name.equals("REMOVE WHITELIST")){toggleWhitelist(p,target);return;}if(name.equals("ACCOUNT INFO")){openAccountInfo(p);return;}
+            if(name.equals("TELEPORT TO PLAYER")){Player online=target.getPlayer();if(online!=null){p.teleport(online.getLocation());logActivity(p,"TELEPORT","Teleported to "+target.getName());p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported to "+target.getName()+".");}else p.sendMessage(PREFIX+ChatColor.RED+"That player is offline.");openAccountDetail(p);return;}return;
+        }
+        if(title.equals(ACCOUNT_INFO)){if(name.equals("BACK")){openAccountDetail(p);return;}return;}
         if(title.startsWith(ACTIVITY_LOG+" ")){
             int page=activityLogPages.getOrDefault(id,0);if(name.equals("BACK")){openDailyUse(p);return;}if(name.equals("PREVIOUS")){openActivityLog(p,page-1);return;}if(name.equals("NEXT")){openActivityLog(p,page+1);return;}return;
         }
