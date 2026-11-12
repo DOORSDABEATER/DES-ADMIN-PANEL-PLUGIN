@@ -35,6 +35,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private final Map<UUID, Map<Integer, UUID>> fromSlots = new HashMap<>(), toSlots = new HashMap<>();
     private final Map<UUID, Map<Integer, String>> waypointSlots = new HashMap<>();
     private final Map<UUID, Integer> waypointPages = new HashMap<>();
+    private final Map<UUID, Integer> fromPlayerPages = new HashMap<>(), toPlayerPages = new HashMap<>();
     private final Map<String, Waypoint> waypoints = new LinkedHashMap<>();
     private static final String PREFIX = ChatColor.DARK_PURPLE + "DES " + ChatColor.GRAY + "» ";
     private static final String MAIN = ChatColor.DARK_GRAY + "✦ DRAGON EMPIRE | CONTROL";
@@ -196,11 +197,13 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private void openDailyUse(Player p){Inventory inv=Bukkit.createInventory(null,54,DAILY_USE);inv.setItem(22,item(Material.ENDER_PEARL,ChatColor.GREEN+"TP","","Teleport players to players or coordinates",ChatColor.YELLOW+"Click to open"));inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);}
     private void openDailyTp(Player p){
         UUID id=p.getUniqueId();Inventory inv=Bukkit.createInventory(null,54,DAILY_TP);Set<UUID> selected=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());
-        inv.setItem(4,item(Material.NAME_TAG,ChatColor.GREEN+"FROM","","Players to teleport","Shift + left-click selects multiple"));
-        inv.setItem(26,item(Material.COMPASS,ChatColor.AQUA+"TO","","Destination player"));
-        Map<Integer,UUID> fm=new HashMap<>(),tm=new HashMap<>();List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int i=0;
-        for(Player target:online){if(i>=fromHeadSlots().length)break;int slot=fromHeadSlots()[i++];fm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,selected.contains(target.getUniqueId()),"FROM: teleport these players"));}
-        i=0;for(Player target:online){if(i>=toHeadSlots().length)break;int slot=toHeadSlots()[i++];tm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,target.getUniqueId().equals(tpTo.get(id)),"TO: destination player"));}
+        List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int fp=Math.max(0,Math.min(fromPlayerPages.getOrDefault(id,0),Math.max(0,(online.size()-1)/fromHeadSlots().length)));int tp=Math.max(0,Math.min(toPlayerPages.getOrDefault(id,0),Math.max(0,(online.size()-1)/toHeadSlots().length)));fromPlayerPages.put(id,fp);toPlayerPages.put(id,tp);
+        inv.setItem(4,item(Material.NAME_TAG,ChatColor.GREEN+"FROM ("+(fp+1)+"/"+Math.max(1,(online.size()+fromHeadSlots().length-1)/fromHeadSlots().length)+")","","Players to teleport","Shift + left-click selects multiple","Left-click: next page | Right-click: previous"));
+        inv.setItem(26,item(Material.COMPASS,ChatColor.AQUA+"TO ("+(tp+1)+"/"+Math.max(1,(online.size()+toHeadSlots().length-1)/toHeadSlots().length)+")","","Destination player","Left-click: next page | Right-click: previous"));
+        Map<Integer,UUID> fm=new HashMap<>(),tm=new HashMap<>();int i=0,start=fp*fromHeadSlots().length;
+        for(Player target:online.subList(Math.min(start,online.size()),Math.min(start+fromHeadSlots().length,online.size()))){int slot=fromHeadSlots()[i++];fm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,selected.contains(target.getUniqueId()),"FROM: teleport these players"));}
+        i=0;start=tp*toHeadSlots().length;
+        for(Player target:online.subList(Math.min(start,online.size()),Math.min(start+toHeadSlots().length,online.size()))){int slot=toHeadSlots()[i++];tm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,target.getUniqueId().equals(tpTo.get(id)),"TO: destination player"));}
         fromSlots.put(id,fm);toSlots.put(id,tm);
         inv.setItem(45,item(Material.LIME_DYE,ChatColor.GREEN+"RUN TP"));
         inv.setItem(47,item(Material.COMPASS,ChatColor.AQUA+"SET COORDINATES","","Enter world x y z in chat"));
@@ -211,9 +214,10 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     }
     private void openWaypoints(Player p,int page){
         UUID id=p.getUniqueId();Inventory inv=Bukkit.createInventory(null,54,WAYPOINTS);Set<UUID> selected=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());
-        inv.setItem(4,item(Material.NAME_TAG,ChatColor.GREEN+"FROM","","Players to teleport","Shift + left-click selects multiple"));
-        Map<Integer,UUID> fm=new HashMap<>();List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int i=0;
-        for(Player target:online){if(i>=fromHeadSlots().length)break;int slot=fromHeadSlots()[i++];fm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,selected.contains(target.getUniqueId()),"FROM: teleport these players"));}fromSlots.put(id,fm);
+        List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int fp=Math.max(0,Math.min(fromPlayerPages.getOrDefault(id,0),Math.max(0,(online.size()-1)/fromHeadSlots().length)));fromPlayerPages.put(id,fp);
+        inv.setItem(4,item(Material.NAME_TAG,ChatColor.GREEN+"FROM ("+(fp+1)+"/"+Math.max(1,(online.size()+fromHeadSlots().length-1)/fromHeadSlots().length)+")","","Players to teleport","Shift + left-click selects multiple","Left-click: next page | Right-click: previous"));
+        Map<Integer,UUID> fm=new HashMap<>();int i=0,startPlayers=fp*fromHeadSlots().length;
+        for(Player target:online.subList(Math.min(startPlayers,online.size()),Math.min(startPlayers+fromHeadSlots().length,online.size()))){int slot=fromHeadSlots()[i++];fm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,selected.contains(target.getUniqueId()),"FROM: teleport these players"));}fromSlots.put(id,fm);
         List<Waypoint> all=new ArrayList<>(waypoints.values());int pages=Math.max(1,(all.size()+22)/23);page=Math.max(0,Math.min(page,pages-1));waypointPages.put(id,page);
         Map<Integer,String> wm=new HashMap<>();int start=page*23;
         for(i=start;i<Math.min(start+23,all.size());i++){Waypoint w=all.get(i);int slot=22+i-start;wm.put(slot,w.id);boolean chosen=w.id.equals(tpWaypoint.get(id));inv.setItem(slot,item(Material.LODESTONE,(chosen?ChatColor.GREEN:ChatColor.GOLD)+w.name,"",ChatColor.GRAY+w.world+" "+w.x+" "+w.y+" "+w.z,chosen?ChatColor.GREEN+"Selected":ChatColor.YELLOW+"Click to select"));}
@@ -333,6 +337,9 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             if(name.equals("SAVE COORDINATES")){ask(p,"savewaypoint-name","Enter a name for this shared waypoint:");return;}
             if(name.equals("WAYPOINTS")){openWaypoints(p,0);return;}
             if(name.equals("SAVE CURRENT LOCATION")){ask(p,"savewaypoint-current-name","Enter a name for this shared waypoint:");return;}
+            if(e.getSlot()==4){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+fromHeadSlots().length-1)/fromHeadSlots().length);int page=fromPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);fromPlayerPages.put(id,Math.floorMod(page,pages));openDailyTp(p);return;}
+            if(e.getSlot()==26){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+toHeadSlots().length-1)/toHeadSlots().length);int page=toPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);toPlayerPages.put(id,Math.floorMod(page,pages));openDailyTp(p);return;}
+            if(e.getSlot()==4){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+fromHeadSlots().length-1)/fromHeadSlots().length);int page=fromPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);fromPlayerPages.put(id,Math.floorMod(page,pages));openWaypoints(p,waypointPages.getOrDefault(id,0));return;}
             UUID fuid=fromSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
             if(fuid!=null&&e.isLeftClick()){Set<UUID> set=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());if(e.isShiftClick()){if(!set.add(fuid))set.remove(fuid);}else{set.clear();set.add(fuid);}openDailyTp(p);return;}
             UUID tuid=toSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
