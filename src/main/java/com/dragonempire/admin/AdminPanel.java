@@ -24,10 +24,16 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private final Map<UUID, String> chatActions = new HashMap<>();
     private final Map<UUID, String> editingChain = new HashMap<>();
     private final Map<UUID, Integer> listPages = new HashMap<>();
+    private final Map<String, AbuseCommand> abuseCommands = new LinkedHashMap<>();
+    private final Map<UUID, String> pendingAbuseNames = new HashMap<>();
+    private final Map<UUID, String> selectedAbuseCommands = new HashMap<>();
     private static final String PREFIX = ChatColor.DARK_PURPLE + "DES " + ChatColor.GRAY + "» ";
     private static final String MAIN = ChatColor.DARK_GRAY + "✦ DRAGON EMPIRE | CONTROL";
     private static final String CHAINS = ChatColor.DARK_GRAY + "✦ PERSONAL CHAINS";
     private static final String EDITOR = ChatColor.DARK_GRAY + "✦ CHAIN BUILDER";
+    private static final String ABUSE_YOURS = ChatColor.DARK_PURPLE + "✦ YOUR ABUSE COMMANDS";
+    private static final String ABUSE_SHARED = ChatColor.DARK_PURPLE + "✦ SHARED COMMANDS";
+    private static final String ABUSE_DETAIL = ChatColor.DARK_PURPLE + "✦ COMMAND SETTINGS";
 
     private static final class Step {
         String command; long delay;
@@ -41,9 +47,14 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         LinkedHashMap<String, Chain> chains = new LinkedHashMap<>();
         Set<String> favourites = new HashSet<>();
     }
+    private static final class AbuseCommand {
+        String id, name, command; UUID owner; boolean shared;
+        AbuseCommand(String id,String name,String command,UUID owner,boolean shared){this.id=id;this.name=name;this.command=command;this.owner=owner;this.shared=shared;}
+    }
 
     @Override public void onEnable() {
         getDataFolder().mkdirs();
+        loadAbuseCommands();
         getServer().getPluginManager().registerEvents(this, this);
         Objects.requireNonNull(getCommand("adminpanel")).setExecutor(this);
         Objects.requireNonNull(getCommand("adminpanel")).setTabCompleter(this);
@@ -108,7 +119,45 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         inv.setItem(12,item(Material.FIREWORK_ROCKET,ChatColor.LIGHT_PURPLE+"LAUNCH","",ChatColor.GRAY+"Launch yourself upward"));
         inv.setItem(14,item(Material.BLAZE_POWDER,ChatColor.RED+"INFERNO","",ChatColor.GRAY+"Ignite a dramatic particle burst"));
         inv.setItem(16,item(Material.ENDER_PEARL,ChatColor.AQUA+"RANDOM TP","",ChatColor.GRAY+"Teleport to a safe nearby spot"));
-        inv.setItem(31,item(Material.ARROW,ChatColor.WHITE+"BACK")); fill(inv); p.openInventory(inv);
+        inv.setItem(29,item(Material.WRITABLE_BOOK,ChatColor.GREEN+"YOUR COMMANDS","",ChatColor.GRAY+"Your custom Admin Abuse commands",ChatColor.YELLOW+"Click to open"));
+        inv.setItem(33,item(Material.BOOKSHELF,ChatColor.AQUA+"SHARED COMMANDS","",ChatColor.GRAY+"Commands shared by all admins",ChatColor.YELLOW+"Click to open"));
+        inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK")); fill(inv); p.openInventory(inv);
+    }
+    private File abuseCommandsFile(){return new File(getDataFolder(),"admin-abuse-commands.yml");}
+    private void loadAbuseCommands(){
+        abuseCommands.clear(); File f=abuseCommandsFile(); if(!f.exists())return;
+        YamlConfiguration y=YamlConfiguration.loadConfiguration(f); if(y.getConfigurationSection("commands")==null)return;
+        for(String id:y.getConfigurationSection("commands").getKeys(false)){
+            String n=y.getString("commands."+id+".name"),cmd=y.getString("commands."+id+".command"),owner=y.getString("commands."+id+".owner");
+            if(n==null||cmd==null||owner==null)continue;
+            try{abuseCommands.put(id,new AbuseCommand(id,n,cmd,UUID.fromString(owner),y.getBoolean("commands."+id+".shared",true)));}
+            catch(IllegalArgumentException ex){getLogger().warning("Skipping command with invalid owner UUID: "+id);}
+        }
+    }
+    private void saveAbuseCommands(){
+        YamlConfiguration y=new YamlConfiguration();
+        for(AbuseCommand c:abuseCommands.values()){String path="commands."+c.id;y.set(path+".name",c.name);y.set(path+".command",c.command);y.set(path+".owner",c.owner.toString());y.set(path+".shared",c.shared);}
+        try{y.save(abuseCommandsFile());}catch(IOException ex){getLogger().severe("Could not save Admin Abuse commands: "+ex.getMessage());}
+    }
+    private boolean canManageAbuse(Player p,AbuseCommand c){return p.getUniqueId().equals(c.owner)||p.hasPermission("dragonempire.admin.owner");}
+    private void openAbuseList(Player p,boolean shared){
+        String title=shared?ABUSE_SHARED:ABUSE_YOURS;Inventory inv=Bukkit.createInventory(null,54,title);int slot=0;
+        for(AbuseCommand c:abuseCommands.values()){
+            if(shared?!c.shared:!p.getUniqueId().equals(c.owner))continue;if(slot>=45)break;
+            inv.setItem(slot++,item(Material.COMMAND_BLOCK,(shared?ChatColor.AQUA:ChatColor.GREEN)+c.name,"",ChatColor.GRAY+"Command: /"+c.command,ChatColor.GRAY+"Created by: "+Bukkit.getOfflinePlayer(c.owner).getName(),ChatColor.YELLOW+"Click to view / run"));
+        }
+        if(!shared)inv.setItem(49,item(Material.EMERALD,ChatColor.GREEN+"CREATE COMMAND","",ChatColor.GRAY+"Create a custom Admin Abuse command"));
+        inv.setItem(45,item(Material.ARROW,ChatColor.WHITE+"BACK"));
+        if(slot==0)inv.setItem(22,item(Material.PAPER,ChatColor.GRAY+"NO COMMANDS YET","",ChatColor.DARK_GRAY+(shared?"Shared commands will appear here.":"Create your first custom command.")));
+        fill(inv);p.openInventory(inv);
+    }
+    private void openAbuseCommand(Player p,String key){
+        AbuseCommand c=abuseCommands.get(key);if(c==null){openAbuseList(p,false);return;}selectedAbuseCommands.put(p.getUniqueId(),key);
+        Inventory inv=Bukkit.createInventory(null,54,ABUSE_DETAIL);
+        inv.setItem(13,item(Material.COMMAND_BLOCK,ChatColor.GOLD+c.name,"",ChatColor.GRAY+"Command: /"+c.command,ChatColor.GRAY+"Visibility: "+(c.shared?ChatColor.GREEN+"SHARED":ChatColor.YELLOW+"PRIVATE"),ChatColor.GRAY+"Owner: "+Bukkit.getOfflinePlayer(c.owner).getName()));
+        inv.setItem(29,item(Material.LIME_DYE,ChatColor.GREEN+"RUN COMMAND"));
+        if(canManageAbuse(p,c)){inv.setItem(31,item(c.shared?Material.ENDER_EYE:Material.PLAYER_HEAD,ChatColor.YELLOW+(c.shared?"MAKE PRIVATE":"MAKE SHARED"),"",ChatColor.GRAY+"Change who can see this command"));inv.setItem(33,item(Material.NAME_TAG,ChatColor.AQUA+"EDIT COMMAND"));inv.setItem(40,item(Material.BARRIER,ChatColor.RED+"DELETE COMMAND"));}
+        inv.setItem(49,item(Material.ARROW,ChatColor.WHITE+"BACK"));fill(inv);p.openInventory(inv);
     }
     private void openChains(Player p,int page) {
         Profile pr=profile(p.getUniqueId()); List<Chain> all=new ArrayList<>(pr.chains.values());
@@ -159,7 +208,10 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         Bukkit.getScheduler().runTask(this,()->{
             Player p=Bukkit.getPlayer(id); if(p==null)return;
             if(message.equalsIgnoreCase("cancel")){p.sendMessage(PREFIX+ChatColor.RED+"Cancelled.");return;}
-            if(action.equals("newchain")){String n=clean(message);if(n.isEmpty()){p.sendMessage(PREFIX+ChatColor.RED+"Invalid name.");return;}
+            if(action.equals("newabuse-name")){String n=message.trim().replaceAll("[^A-Za-z0-9 _-]","");if(n.isEmpty()||n.length()>32){p.sendMessage(PREFIX+ChatColor.RED+"Use a name between 1 and 32 characters.");openAbuseList(p,false);return;}pendingAbuseNames.put(id,n);ask(p,"newabuse-command","Enter the command to run (without the leading slash):");}
+            else if(action.equals("newabuse-command")){String n=pendingAbuseNames.remove(id),command=message.replaceFirst("^/","").trim();if(n==null||command.isEmpty()||command.contains("\n")){p.sendMessage(PREFIX+ChatColor.RED+"Invalid command.");openAbuseList(p,false);return;}String key=UUID.randomUUID().toString();abuseCommands.put(key,new AbuseCommand(key,n,command,id,true));saveAbuseCommands();p.sendMessage(PREFIX+ChatColor.GREEN+"Created and shared command: "+n);openAbuseList(p,false);}
+            else if(action.startsWith("editabuse:")){String key=action.substring(9),command=message.replaceFirst("^/","").trim();AbuseCommand c=abuseCommands.get(key);if(c!=null&&canManageAbuse(p,c)&&!command.isEmpty()&&!command.contains("\n")){c.command=command;saveAbuseCommands();openAbuseCommand(p,key);}else{p.sendMessage(PREFIX+ChatColor.RED+"Could not update that command.");openAbuseList(p,false);}}
+            else if(action.equals("newchain")){String n=clean(message);if(n.isEmpty()){p.sendMessage(PREFIX+ChatColor.RED+"Invalid name.");return;}
                 Profile pr=profile(id);if(pr.chains.containsKey(n)){p.sendMessage(PREFIX+ChatColor.RED+"That name already exists.");return;}
                 pr.chains.put(n,new Chain(n));saveProfile(id);openEditor(p,n);
             } else if(action.startsWith("add:")){String n=action.substring(4);String cmd=message.replaceFirst("^/","").trim();
@@ -180,7 +232,7 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         s.sendMessage(PREFIX+"Use /ap, /ap list, /ap create <name>, /ap run <name>");return true;
     }
     @EventHandler public void onClick(InventoryClickEvent e) {
-        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE"); if(!known)return;
+        String title=e.getView().getTitle(); boolean known=title.equals(MAIN)||title.startsWith(CHAINS+" ")||title.startsWith(EDITOR+" | ")||title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")||title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)||title.equals(ABUSE_DETAIL); if(!known)return;
         e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||!allowed(p)||e.getCurrentItem()==null||!e.getCurrentItem().hasItemMeta())return;
         String name=ChatColor.stripColor(e.getCurrentItem().getItemMeta().getDisplayName()); if(name==null)return;
         UUID id=p.getUniqueId();
@@ -188,7 +240,23 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             switch(name){case "ADMIN ABUSE":openAbuse(p);break;case "COMMAND CHAINS":openChains(p,0);break;case "CHAIN BUILDER":ask(p,"newchain","Enter a name for your new chain:");break;case "PLAYER TOOLS":p.sendMessage(PREFIX+"Use /tp, /effect and other server commands in your chains.");break;case "MY PROFILE":p.sendMessage(PREFIX+"Your profile is stored separately from other admins.");break;case "CLOSE":p.closeInventory();break;}return;
         }
         if(title.equals(ChatColor.DARK_PURPLE+"✦ ADMIN ABUSE")){
-            switch(name){case "BACK":openMain(p);break;case "THUNDER CALL":p.getWorld().strikeLightningEffect(p.getTargetBlockExact(64)==null?p.getLocation():p.getTargetBlockExact(64).getLocation());break;case "LAUNCH":p.setVelocity(p.getVelocity().setY(2.2));break;case "INFERNO":p.getWorld().spawnParticle(org.bukkit.Particle.FLAME,p.getLocation(),100,2,1,2,0.04);p.getWorld().playSound(p.getLocation(),org.bukkit.Sound.ENTITY_BLAZE_SHOOT,1,0.7f);break;case "RANDOM TP":{var l=p.getLocation();var r=l.clone().add((Math.random()-.5)*24,0,(Math.random()-.5)*24);r.setY(p.getWorld().getHighestBlockYAt(r)+1);if(p.getWorld().getBlockAt(r).isPassable())p.teleport(r);break;}}return;
+            switch(name){case "BACK":openMain(p);break;case "YOUR COMMANDS":openAbuseList(p,false);break;case "SHARED COMMANDS":openAbuseList(p,true);break;case "THUNDER CALL":p.getWorld().strikeLightningEffect(p.getTargetBlockExact(64)==null?p.getLocation():p.getTargetBlockExact(64).getLocation());break;case "LAUNCH":p.setVelocity(p.getVelocity().setY(2.2));break;case "INFERNO":p.getWorld().spawnParticle(org.bukkit.Particle.FLAME,p.getLocation(),100,2,1,2,0.04);p.getWorld().playSound(p.getLocation(),org.bukkit.Sound.ENTITY_BLAZE_SHOOT,1,0.7f);break;case "RANDOM TP":{var l=p.getLocation();var r=l.clone().add((Math.random()-.5)*24,0,(Math.random()-.5)*24);r.setY(p.getWorld().getHighestBlockYAt(r)+1);if(p.getWorld().getBlockAt(r).isPassable())p.teleport(r);break;}}return;
+        }
+        if(title.equals(ABUSE_YOURS)||title.equals(ABUSE_SHARED)){
+            boolean shared=title.equals(ABUSE_SHARED);if(name.equals("BACK")){openAbuse(p);return;}
+            if(name.equals("CREATE COMMAND")&&!shared){ask(p,"newabuse-name","Enter a name for your new command:");return;}
+            if(name.equals("NO COMMANDS YET"))return;
+            for(AbuseCommand c:abuseCommands.values()){if(shared?!c.shared:!p.getUniqueId().equals(c.owner))continue;String display=ChatColor.stripColor((shared?ChatColor.AQUA:ChatColor.GREEN)+c.name);if(display.equals(name)){openAbuseCommand(p,c.id);return;}}return;
+        }
+        if(title.equals(ABUSE_DETAIL)){
+            String key=selectedAbuseCommands.get(id);AbuseCommand c=key==null?null:abuseCommands.get(key);if(c==null){openAbuseList(p,false);return;}
+            if(name.equals("BACK")){openAbuseList(p,c.shared);return;}
+            if(name.equals("RUN COMMAND")){Bukkit.dispatchCommand(Bukkit.getConsoleSender(),c.command);p.sendMessage(PREFIX+ChatColor.GREEN+"Executed "+c.name+".");return;}
+            if(!canManageAbuse(p,c))return;
+            if(name.equals("MAKE PRIVATE")){c.shared=false;saveAbuseCommands();openAbuseCommand(p,key);return;}
+            if(name.equals("MAKE SHARED")){c.shared=true;saveAbuseCommands();openAbuseCommand(p,key);return;}
+            if(name.equals("EDIT COMMAND")){ask(p,"editabuse:"+key,"Enter the updated command (without the leading slash):");return;}
+            if(name.equals("DELETE COMMAND")){abuseCommands.remove(key);saveAbuseCommands();p.sendMessage(PREFIX+ChatColor.RED+"Command deleted.");openAbuseList(p,false);return;}return;
         }
         if(title.startsWith(CHAINS)){
             int page=listPages.getOrDefault(id,0);if(name.equals("BACK")){openMain(p);return;}if(name.equals("CREATE CHAIN")){ask(p,"newchain","Enter a name for your new chain:");return;}
