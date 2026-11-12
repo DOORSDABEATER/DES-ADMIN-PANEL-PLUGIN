@@ -259,13 +259,14 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     private void openWaypoints(Player p,int page){
         UUID id=p.getUniqueId();Inventory inv=Bukkit.createInventory(null,54,WAYPOINTS);Set<UUID> selected=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());
         List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());int fp=Math.max(0,Math.min(fromPlayerPages.getOrDefault(id,0),Math.max(0,(online.size()-1)/fromHeadSlots().length)));fromPlayerPages.put(id,fp);
-        inv.setItem(4,item(Material.NAME_TAG,ChatColor.GREEN+"FROM ("+(fp+1)+"/"+Math.max(1,(online.size()+fromHeadSlots().length-1)/fromHeadSlots().length)+")","","Players to teleport","Shift + left-click selects multiple","Left-click: next page | Right-click: previous"));
+        List<Waypoint> all=new ArrayList<>(waypoints.values());int pages=Math.max(1,(all.size()+toHeadSlots().length-1)/toHeadSlots().length);page=Math.max(0,Math.min(page,pages-1));waypointPages.put(id,page);
+        inv.setItem(20,item(Material.NAME_TAG,ChatColor.GREEN+"FROM ("+(fp+1)+"/"+Math.max(1,(online.size()+fromHeadSlots().length-1)/fromHeadSlots().length)+")","","Players to teleport","Shift + left-click selects multiple","Left-click: next page | Right-click: previous"));
+        inv.setItem(24,item(Material.COMPASS,ChatColor.AQUA+"TO ("+(page+1)+"/"+pages+")","","Shared waypoint destination","Left-click: next page | Right-click: previous"));
         Map<Integer,UUID> fm=new HashMap<>();int i=0,startPlayers=fp*fromHeadSlots().length;
         for(Player target:online.subList(Math.min(startPlayers,online.size()),Math.min(startPlayers+fromHeadSlots().length,online.size()))){int slot=fromHeadSlots()[i++];fm.put(slot,target.getUniqueId());inv.setItem(slot,playerHead(target,selected.contains(target.getUniqueId()),"FROM: teleport these players"));}fromSlots.put(id,fm);
-        List<Waypoint> all=new ArrayList<>(waypoints.values());int pages=Math.max(1,(all.size()+22)/23);page=Math.max(0,Math.min(page,pages-1));waypointPages.put(id,page);
-        Map<Integer,String> wm=new HashMap<>();int start=page*23;
-        for(i=start;i<Math.min(start+23,all.size());i++){Waypoint w=all.get(i);int slot=22+i-start;wm.put(slot,w.id);boolean chosen=w.id.equals(tpWaypoint.get(id));inv.setItem(slot,item(Material.LODESTONE,(chosen?ChatColor.GREEN:ChatColor.GOLD)+w.name,"",ChatColor.GRAY+w.world+" "+w.x+" "+w.y+" "+w.z,chosen?ChatColor.GREEN+"Selected":ChatColor.YELLOW+"Click to select"));}
-        waypointSlots.put(id,wm);if(all.isEmpty())inv.setItem(32,item(Material.PAPER,ChatColor.GRAY+"NO WAYPOINTS","","Save your current location from the TP menu."));
+        Map<Integer,String> wm=new HashMap<>();int start=page*toHeadSlots().length;
+        for(i=start;i<Math.min(start+toHeadSlots().length,all.size());i++){Waypoint w=all.get(i);int slot=toHeadSlots()[i-start];wm.put(slot,w.id);boolean chosen=w.id.equals(tpWaypoint.get(id));inv.setItem(slot,item(Material.LODESTONE,(chosen?ChatColor.GREEN:ChatColor.GOLD)+w.name,"",ChatColor.GRAY+w.world+" "+w.x+" "+w.y+" "+w.z,chosen?ChatColor.GREEN+"Selected":ChatColor.YELLOW+"Click to select"));}
+        waypointSlots.put(id,wm);if(all.isEmpty())inv.setItem(33,item(Material.PAPER,ChatColor.GRAY+"NO WAYPOINTS","","Save your current location from the TP menu."));
         inv.setItem(45,item(Material.ARROW,ChatColor.WHITE+"PREVIOUS"));inv.setItem(48,item(Material.ARROW,ChatColor.WHITE+"BACK TO TP"));inv.setItem(50,item(Material.LIME_DYE,ChatColor.GREEN+"RUN TP"));inv.setItem(53,item(Material.ARROW,ChatColor.WHITE+"NEXT"));fill(inv);p.openInventory(inv);
     }
     private void runDailyTp(Player p){
@@ -397,7 +398,8 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
             if(tuid!=null&&e.isLeftClick()){tpTo.put(id,tuid);tpCoords.remove(id);tpWaypoint.remove(id);openDailyTp(p);return;}return;
         }
         if(title.equals(WAYPOINTS)){
-            if(e.getSlot()==4){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+fromHeadSlots().length-1)/fromHeadSlots().length);int page=fromPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);fromPlayerPages.put(id,Math.floorMod(page,pages));openWaypoints(p,waypointPages.getOrDefault(id,0));return;}
+            if(e.getSlot()==20){int pages=Math.max(1,(Bukkit.getOnlinePlayers().size()+fromHeadSlots().length-1)/fromHeadSlots().length);int page=fromPlayerPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);fromPlayerPages.put(id,Math.floorMod(page,pages));openWaypoints(p,waypointPages.getOrDefault(id,0));return;}
+            if(e.getSlot()==24){int pages=Math.max(1,(waypoints.size()+toHeadSlots().length-1)/toHeadSlots().length);int page=waypointPages.getOrDefault(id,0)+(e.isRightClick()?-1:1);openWaypoints(p,Math.floorMod(page,pages));return;}
             if(name.equals("BACK TO TP")){openDailyTp(p);return;}if(name.equals("PREVIOUS")){openWaypoints(p,waypointPages.getOrDefault(id,0)-1);return;}if(name.equals("NEXT")){openWaypoints(p,waypointPages.getOrDefault(id,0)+1);return;}if(name.equals("RUN TP")){runDailyTp(p);return;}
             UUID fuid=fromSlots.getOrDefault(id,Collections.emptyMap()).get(e.getSlot());
             if(fuid!=null&&e.isLeftClick()){Set<UUID> set=tpFrom.computeIfAbsent(id,k->new LinkedHashSet<>());if(e.isShiftClick()){if(!set.add(fuid))set.remove(fuid);}else{set.clear();set.add(fuid);}openWaypoints(p,waypointPages.getOrDefault(id,0));return;}
