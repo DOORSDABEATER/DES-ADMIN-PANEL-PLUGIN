@@ -276,11 +276,13 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
         if(dest==null&&to!=null){Player t=Bukkit.getPlayer(to);if(t!=null)dest=t.getLocation();}
         if(dest==null){p.sendMessage(PREFIX+ChatColor.RED+"Select a TO player, coordinate, or waypoint first.");return;}
         Set<UUID> from=tpFrom.getOrDefault(id,new LinkedHashSet<>());
+        String destination=dest.getWorld().getName()+" "+dest.getBlockX()+" "+dest.getBlockY()+" "+dest.getBlockZ();
         if(from.isEmpty()){
-            if(wp==null&&!tpCoords.containsKey(id)&&to!=null){Player t=Bukkit.getPlayer(to);if(t!=null){p.teleport(t.getLocation());p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported you to "+t.getName()+".");return;}}
-            p.teleport(dest);p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported you to the selected destination.");return;
+            if(wp==null&&!tpCoords.containsKey(id)&&to!=null){Player t=Bukkit.getPlayer(to);if(t!=null){p.teleport(t.getLocation());logActivity(p,"TELEPORT","Teleported self to "+t.getName());p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported you to "+t.getName()+".");return;}}
+            p.teleport(dest);logActivity(p,"TELEPORT","Teleported self to "+(wp!=null&&waypoints.containsKey(wp)?"waypoint "+waypoints.get(wp).name:destination));p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported you to the selected destination.");return;
         }
-        int count=0;for(UUID uid:from){Player target=Bukkit.getPlayer(uid);if(target!=null){target.teleport(dest);count++;}}
+        int count=0;List<String> moved=new ArrayList<>();for(UUID uid:from){Player target=Bukkit.getPlayer(uid);if(target!=null){target.teleport(dest);moved.add(target.getName());count++;}}
+        logActivity(p,"TELEPORT","Teleported "+String.join(", ",moved)+" to "+(wp!=null&&waypoints.containsKey(wp)?"waypoint "+waypoints.get(wp).name:destination));
         p.sendMessage(PREFIX+ChatColor.GREEN+"Teleported "+count+" player(s).");
     }
     private void saveWaypoint(Player p,String name,Location loc){
