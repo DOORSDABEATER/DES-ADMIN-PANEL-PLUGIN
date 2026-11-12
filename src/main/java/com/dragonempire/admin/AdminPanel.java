@@ -148,10 +148,9 @@ public final class AdminPanel extends JavaPlugin implements Listener, TabExecuto
     }
     private void openMain(Player p) {
         Inventory inv = Bukkit.createInventory(null,54,MAIN);
-        inv.setItem(10,item(Material.NETHER_STAR,ChatColor.LIGHT_PURPLE+"ADMIN ABUSE","",ChatColor.GRAY+"Abilities, chaos and server-wide fun",ChatColor.YELLOW+"Click to open"));
-        inv.setItem(12,item(Material.WRITABLE_BOOK,ChatColor.AQUA+"COMMAND CHAINS","",ChatColor.GRAY+"Your personal saved sequences",ChatColor.YELLOW+"Click to open"));
-        inv.setItem(16,item(Material.PLAYER_HEAD,ChatColor.GREEN+"PLAYER TOOLS","",ChatColor.GRAY+"Teleport and inspect players"));
-        inv.setItem(31,item(Material.CHEST,ChatColor.WHITE+"MY PROFILE","",ChatColor.GRAY+"Your personal panel data is saved by UUID"));
+        inv.setItem(11,item(Material.NETHER_STAR,ChatColor.LIGHT_PURPLE+"ADMIN ABUSE","",ChatColor.GRAY+"Abilities, chaos and server-wide fun",ChatColor.YELLOW+"Click to open"));
+        inv.setItem(13,item(Material.WRITABLE_BOOK,ChatColor.AQUA+"COMMAND CHAINS","",ChatColor.GRAY+"Your personal saved sequences",ChatColor.YELLOW+"Click to open"));
+        inv.setItem(15,item(Material.PLAYER_HEAD,ChatColor.GREEN+"DAILY USE","",ChatColor.GRAY+"Teleport, weather, time, gamerules and activity log",ChatColor.YELLOW+"Click to open"));
         inv.setItem(49,item(Material.BARRIER,ChatColor.RED+"CLOSE")); fill(inv); p.openInventory(inv);
     }
     private void openAbuse(Player p) {
